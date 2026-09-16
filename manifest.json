@@ -1441,6 +1441,1599 @@
         "Use OIDC Provider for Authenticating Kubernetes API Calls - pass: an IAM OIDC provider exists for the cluster issuer",
         "AWS Secrets Manager in Use for RDS Instances - pass: every RDS master credential is stored in Secrets Manager",
         "Secret Rotation Enabled - pass: RotationEnabled = true on every secret"
+      ],
+      "items": [
+        {
+          "title": "Root Account Access Keys Present",
+          "pass": "`AccountAccessKeysPresent` = `0`",
+          "console": {
+            "verify": "IAM > Dashboard > Security recommendations > `Root user has no active access keys` shows a green check mark",
+            "fix": "IAM (signed in as the root user) > My security credentials > Access keys > select each key > Actions > Delete > type the key ID > Delete"
+          },
+          "cli": {
+            "verify": [
+              "aws iam get-account-summary --query 'SummaryMap.AccountAccessKeysPresent'"
+            ],
+            "expect": "`0`. Any other value means the root user has a long-lived access key, which cannot be scoped, restricted by policy or denied by an SCP - one leak is unlimited access to the account."
+          }
+        },
+        {
+          "title": "Root MFA Enabled",
+          "pass": "`AccountMFAEnabled` = `1`",
+          "console": {
+            "verify": "IAM > Dashboard > Security recommendations > `Root user has MFA` shows a green check mark",
+            "fix": "IAM (signed in as the root user) > My security credentials > Multi-factor authentication (MFA) > Assign MFA device > choose `Passkey or security key` or `Hardware TOTP token` > Next > complete the registration > Add MFA"
+          },
+          "cli": {
+            "verify": [
+              "aws iam get-account-summary --query 'SummaryMap.AccountMFAEnabled'"
+            ],
+            "expect": "`1`. Without MFA the root password alone controls the account, including billing and account closure."
+          }
+        },
+        {
+          "title": "Root Account Credentials Usage",
+          "pass": "no root sign-in since the last recorded break-glass event",
+          "console": {
+            "verify": "IAM > Credential report > Download report > open the CSV > the `<root_account>` row > `password_last_used` reads `no_information` or a date you can tie to a specific approved task",
+            "fix": "CloudWatch > Logs > Log groups > <cloudtrail-log-group> > Metric filters > Create metric filter > Filter pattern `{ $.userIdentity.type = \"Root\" && $.userIdentity.invokedBy NOT EXISTS && $.eventType != \"AwsServiceEvent\" }` > Next > Filter name `RootUsage`, Metric namespace `CISBenchmark`, Metric name `RootUsage`, Metric value `1` > Next > Create metric filter; then select the filter > Create alarm > Threshold `Greater/Equal` than `1` > Next > Notification > an on-call SNS topic > Next > Alarm name `RootUsage` > Create alarm"
+          },
+          "cli": {
+            "verify": [
+              "aws iam get-credential-report --query Content --output text | base64 --decode | \\\n  awk -F, 'NR==1 || $1==\"<root_account>\" {print $1\", \"$5\", \"$11\", \"$16}'"
+            ],
+            "fix": [
+              "aws logs put-metric-filter --log-group-name <cloudtrail-log-group> --filter-name RootUsage \\\n  --filter-pattern '{ $.userIdentity.type = \"Root\" && $.userIdentity.invokedBy NOT EXISTS && $.eventType != \"AwsServiceEvent\" }' \\\n  --metric-transformations metricName=RootUsage,metricNamespace=CISBenchmark,metricValue=1",
+              "aws cloudwatch put-metric-alarm --alarm-name RootUsage --namespace CISBenchmark --metric-name RootUsage \\\n  --statistic Sum --period 300 --threshold 1 --comparison-operator GreaterThanOrEqualToThreshold \\\n  --evaluation-periods 1 --alarm-actions <sns-topic-arn>"
+            ],
+            "expect": "`password_last_used` is `no_information`, or a date you can tie to a specific approved task (account setup, a support case, an SCP change). An unexplained recent root sign-in is an incident, not a finding."
+          }
+        },
+        {
+          "title": "Hardware MFA for AWS Root Account",
+          "pass": "`AccountMFAEnabled` = `1` with no virtual MFA device on root",
+          "console": {
+            "verify": "IAM (signed in as the root user) > My security credentials > Multi-factor authentication (MFA) > the device list shows a `Security key` or `Hardware TOTP token` entry and no `Virtual` (authenticator app) entry",
+            "fix": "IAM (signed in as the root user) > My security credentials > Multi-factor authentication (MFA) > Assign MFA device > `Passkey or security key` or `Hardware TOTP token` > Next > register the device > Add MFA; then select the virtual device > Remove > Remove"
+          },
+          "cli": {
+            "verify": [
+              "aws iam list-virtual-mfa-devices \\\n  --query \"VirtualMFADevices[?ends_with(User.Arn, ':root')].SerialNumber\"",
+              "aws iam get-account-summary --query 'SummaryMap.AccountMFAEnabled'"
+            ],
+            "expect": "the first command returns an empty list `[]` and the second returns `1`. A serial number means root is protected by a software authenticator on a phone that can be lost, cloned or restored from a backup."
+          }
+        },
+        {
+          "title": "Enable MFA for IAM Users with Console Password",
+          "pass": "the query returns no users",
+          "console": {
+            "verify": "IAM > Users > every row whose `Password age` column shows a value also shows a device type in the `MFA` column (no console user reads `-` under MFA)",
+            "fix": "IAM > Users > <user> > Security credentials > Multi-factor authentication (MFA) > Assign MFA device > choose the device type > Next > register the device > Add MFA; then IAM > Policies > Create policy > JSON > a `Deny` on `*` with condition `\"BoolIfExists\": {\"aws:MultiFactorAuthPresent\": \"false\"}` > Next > Create policy > attach it to every console user's group"
+          },
+          "cli": {
+            "verify": [
+              "aws iam get-credential-report --query Content --output text | base64 --decode | \\\n  awk -F, 'NR>1 && $4==\"true\" && $8==\"false\" {print $1}'"
+            ],
+            "fix": [
+              "aws iam enable-mfa-device --user-name <user> --serial-number <mfa-arn> \\\n  --authentication-code1 <code1> --authentication-code2 <code2>"
+            ],
+            "expect": "no output. Every name printed is a user who can sign in to the console with a password alone."
+          }
+        },
+        {
+          "title": "IAM Users with Administrative Privileges",
+          "pass": "no IAM user holds AdministratorAccess except named break-glass accounts",
+          "console": {
+            "verify": "IAM > Policies > AdministratorAccess > Entities attached > the `Users` list and the `Groups` list contain only documented break-glass users and no group that ordinary users belong to",
+            "fix": "IAM > Policies > AdministratorAccess > Entities attached > select the user or group > Detach > Detach; then IAM > Users > <user> > Permissions > Add permissions > Attach policies directly > the narrowest managed policy that works > Add permissions"
+          },
+          "cli": {
+            "verify": [
+              "aws iam list-users --query 'Users[].UserName' --output text | tr '\\t' '\\n' | while read u; do\n  p=$(aws iam list-attached-user-policies --user-name \"$u\" \\\n    --query \"AttachedPolicies[?PolicyName=='AdministratorAccess'].PolicyName\" --output text)\n  [ -n \"$p\" ] && echo \"direct: $u\"\ndone",
+              "aws iam list-groups-for-user --user-name <user> --query 'Groups[].GroupName' --output text",
+              "aws iam list-attached-group-policies --group-name <group> --query 'AttachedPolicies[].PolicyName'"
+            ],
+            "fix": [
+              "aws iam detach-user-policy --user-name <user> \\\n  --policy-arn arn:aws:iam::aws:policy/AdministratorAccess"
+            ],
+            "expect": "the loop prints nothing beyond documented break-glass users, and no group a user belongs to carries `AdministratorAccess`. Standing admin on a user is a credential that works from anywhere without an assumed-role MFA step."
+          }
+        },
+        {
+          "title": "IAM Policies With Full Administrative Privileges",
+          "pass": "no customer-managed policy allows Action `*` on Resource `*`",
+          "console": {
+            "verify": "IAM > Policies > filter `Type: Customer managed` > open each policy > Permissions > JSON > no statement combines `\"Effect\": \"Allow\"`, `\"Action\": \"*\"` and `\"Resource\": \"*\"`",
+            "fix": "IAM > Policies > <policy> > Permissions > Edit > JSON > replace the wildcard with an explicit action list and resource ARNs > Next > Save changes"
+          },
+          "cli": {
+            "verify": [
+              "aws iam list-policies --scope Local --only-attached --query 'Policies[].Arn' --output text | tr '\\t' '\\n' | while read a; do\n  echo \"== $a\"\n  aws iam get-policy-version --policy-arn \"$a\" \\\n    --version-id \"$(aws iam get-policy --policy-arn \"$a\" --query Policy.DefaultVersionId --output text)\" \\\n    --query 'PolicyVersion.Document.Statement'\ndone"
+            ],
+            "fix": [
+              "aws iam create-policy-version --policy-arn <arn> --policy-document file://policy.json \\\n  --set-as-default"
+            ],
+            "expect": "no statement combines `\"Effect\": \"Allow\"` with `\"Action\": \"*\"` and `\"Resource\": \"*\"`. That combination is `AdministratorAccess` under a custom name, which is how admin survives a review that only looks for the AWS-managed policy."
+          }
+        },
+        {
+          "title": "IAM Policies with Effect Allow and NotAction",
+          "pass": "no Allow statement uses `NotAction`",
+          "console": {
+            "verify": "IAM > Policies > filter `Type: Customer managed` > open each policy > Permissions > JSON > no statement with `\"Effect\": \"Allow\"` contains a `NotAction` key",
+            "fix": "IAM > Policies > <policy> > Permissions > Edit > JSON > replace `NotAction` with an explicit `Action` list > Next > Save changes"
+          },
+          "cli": {
+            "verify": [
+              "aws iam list-policies --scope Local --only-attached --query 'Policies[].Arn' --output text | tr '\\t' '\\n' | while read a; do\n  d=$(aws iam get-policy-version --policy-arn \"$a\" \\\n    --version-id \"$(aws iam get-policy --policy-arn \"$a\" --query Policy.DefaultVersionId --output text)\" \\\n    --query 'PolicyVersion.Document' --output json)\n  echo \"$d\" | grep -q '\"NotAction\"' && echo \"$a\"\ndone"
+            ],
+            "fix": [
+              "aws iam create-policy-version --policy-arn <arn> --policy-document file://policy.json \\\n  --set-as-default"
+            ],
+            "expect": "no output. `Allow` with `NotAction` grants everything except what you listed, so every service AWS launches afterwards is permitted by default in a policy nobody revisits."
+          }
+        },
+        {
+          "title": "IAM Role Policy Too Permissive",
+          "pass": "no role holds AdministratorAccess or a wildcard inline policy",
+          "console": {
+            "verify": "IAM > Policies > AdministratorAccess > Entities attached > the `Roles` list contains only documented roles, and IAM > Roles > <role> > Permissions > Permissions policies > no inline policy JSON allows `\"Action\": \"*\"` on `\"Resource\": \"*\"`",
+            "fix": "IAM > Roles > <role> > Permissions > Permissions policies > select AdministratorAccess > Remove > Remove; then Add permissions > Attach policies > a policy scoped to the services the workload calls > Add permissions"
+          },
+          "cli": {
+            "verify": [
+              "aws iam list-roles --query \"Roles[?!starts_with(Path, '/aws-service-role/')].RoleName\" --output text | tr '\\t' '\\n' | while read r; do\n  p=$(aws iam list-attached-role-policies --role-name \"$r\" \\\n    --query \"AttachedPolicies[?PolicyName=='AdministratorAccess'].PolicyName\" --output text)\n  [ -n \"$p\" ] && echo \"$r\"\ndone",
+              "aws iam list-role-policies --role-name <role>",
+              "aws iam get-role-policy --role-name <role> --policy-name <name>"
+            ],
+            "fix": [
+              "aws iam detach-role-policy --role-name <role> \\\n  --policy-arn arn:aws:iam::aws:policy/AdministratorAccess"
+            ],
+            "expect": "the loop prints only roles that genuinely need account-wide control and are documented, and no inline policy allows `*` on `*`. A role attached to compute is a credential any code on that compute can use."
+          }
+        },
+        {
+          "title": "Cross-Account Access Lacks External ID and MFA",
+          "pass": "every cross-account trust carries an `sts:ExternalId` or MFA condition",
+          "console": {
+            "verify": "IAM > Roles > every row whose `Trusted entities` column reads `Account: <other-account-id>` > open the role > Trust relationships > the policy JSON has a `Condition` block on `sts:ExternalId` or `aws:MultiFactorAuthPresent`",
+            "fix": "IAM > Roles > <role> > Trust relationships > Edit trust policy > add `\"Condition\": {\"StringEquals\": {\"sts:ExternalId\": \"<value agreed with the third party>\"}}` (or `\"Bool\": {\"aws:MultiFactorAuthPresent\": \"true\"}` for human access) > Update policy"
+          },
+          "cli": {
+            "verify": [
+              "aws iam list-roles \\\n  --query \"Roles[?contains(to_string(AssumeRolePolicyDocument), ':root') || contains(to_string(AssumeRolePolicyDocument), ':user/')].{Role:RoleName, Trust:AssumeRolePolicyDocument}\" \\\n  --output json"
+            ],
+            "fix": [
+              "aws iam update-assume-role-policy --role-name <role> --policy-document file://trust.json"
+            ],
+            "expect": "each role trusting a principal in another account has a `Condition` block requiring `sts:ExternalId`, or `aws:MultiFactorAuthPresent` for human access. Without one, any third party who learns your role ARN and account ID can attempt assumption - the confused deputy problem."
+          }
+        },
+        {
+          "title": "Check for Untrusted Cross-Account IAM Roles",
+          "pass": "every external account ID in a trust policy is known and approved",
+          "console": {
+            "verify": "IAM > Roles > every `Account: <id>` value in the `Trusted entities` column is your own account, appears under Organizations > AWS accounts, or maps to a named vendor with a current contract",
+            "fix": "IAM > Roles > <role> > Trust relationships > Edit trust policy > remove the external principal > Update policy; or IAM > Roles > select the role > Delete > type the role name > Delete if nothing else uses it"
+          },
+          "cli": {
+            "verify": [
+              "aws iam list-roles --query 'Roles[].{Role:RoleName, Trust:AssumeRolePolicyDocument}' --output json | \\\n  grep -oE 'arn:aws:iam::[0-9]{12}' | sort -u",
+              "aws organizations list-accounts --query 'Accounts[].Id' --output text"
+            ],
+            "fix": [
+              "aws iam update-assume-role-policy --role-name <role> --policy-document file://trust.json",
+              "aws iam delete-role --role-name <role>"
+            ],
+            "expect": "every account ID from the first command that is not your own appears in the second command's output or maps to a named vendor with a current contract. Stale vendor trusts are a standing path into the account long after the engagement ends."
+          }
+        },
+        {
+          "title": "Inactive IAM Console User",
+          "pass": "no console user idle for more than 90 days",
+          "console": {
+            "verify": "IAM > Users > the `Console last sign-in` column shows no date older than 90 days (and no `Never` on a user with a `Password age` value)",
+            "fix": "IAM > Users > <user> > Security credentials > Console sign-in > Manage console access > Console access `Disable` > Apply; then IAM > Users > select the user > Delete > type the user name > Delete once nothing depends on it"
+          },
+          "cli": {
+            "verify": [
+              "aws iam get-credential-report --query Content --output text | base64 --decode | \\\n  awk -F, 'NR>1 && $4==\"true\" {print $1\", last used: \"$5}'"
+            ],
+            "fix": [
+              "aws iam delete-login-profile --user-name <user>"
+            ],
+            "expect": "every console-enabled user shows a sign-in within 90 days. Dormant accounts keep their permissions, are rarely covered by MFA reviews, and are the quietest way back into an account after offboarding."
+          }
+        },
+        {
+          "title": "Unused IAM User",
+          "pass": "no user without console or access-key activity in 90 days",
+          "console": {
+            "verify": "IAM > Users > the `Last activity` column shows no `None` and no date older than 90 days",
+            "fix": "IAM > Users > select the user > Delete > type the user name > Delete (the console detaches policies and removes keys in the same flow)"
+          },
+          "cli": {
+            "verify": [
+              "aws iam get-credential-report --query Content --output text | base64 --decode | \\\n  awk -F, 'NR>1 {print $1\", password: \"$5\", key1: \"$11\", key2: \"$16}'"
+            ],
+            "fix": [
+              "aws iam delete-access-key --user-name <user> --access-key-id <id>",
+              "aws iam delete-user --user-name <user>"
+            ],
+            "expect": "every user shows activity within 90 days on at least one credential. A user with `N/A` across all three has never been used and should not exist."
+          }
+        },
+        {
+          "title": "IAM User with Password and Access Keys",
+          "pass": "no user has both a console password and an active access key",
+          "console": {
+            "verify": "IAM > Users > no row shows a value in both the `Password age` column and the `Active key age` column",
+            "fix": "IAM > Users > <user> > Security credentials > Access keys > Actions > Deactivate > Deactivate, then Actions > Delete > type the key ID > Delete (for a person); or Security credentials > Console sign-in > Manage console access > Console access `Disable` > Apply (for a workload)"
+          },
+          "cli": {
+            "verify": [
+              "aws iam get-credential-report --query Content --output text | base64 --decode | \\\n  awk -F, 'NR>1 && $4==\"true\" && ($9==\"true\" || $14==\"true\") {print $1}'"
+            ],
+            "fix": [
+              "aws iam delete-access-key --user-name <user> --access-key-id <id>",
+              "aws iam delete-login-profile --user-name <user>"
+            ],
+            "expect": "no output. A human identity with programmatic keys doubles the credential surface and means a key leak cannot be distinguished from normal human activity in CloudTrail."
+          }
+        },
+        {
+          "title": "Unnecessary Access Keys",
+          "pass": "no active access key that has never been used",
+          "console": {
+            "verify": "IAM > Users > <user> > Security credentials > Access keys > every key with `Status` = `Active` shows a `Last used` value other than `Never`",
+            "fix": "IAM > Users > <user> > Security credentials > Access keys > select the key > Actions > Deactivate > Deactivate; after a soak period Actions > Delete > type the key ID > Delete"
+          },
+          "cli": {
+            "verify": [
+              "aws iam get-credential-report --query Content --output text | base64 --decode | \\\n  awk -F, 'NR>1 && (($9==\"true\" && $11==\"N/A\") || ($14==\"true\" && $16==\"N/A\")) {print $1}'"
+            ],
+            "fix": [
+              "aws iam update-access-key --user-name <user> --access-key-id <id> --status Inactive",
+              "aws iam delete-access-key --user-name <user> --access-key-id <id>"
+            ],
+            "expect": "no output. An active key that has never been used is a live credential nobody is watching, and its absence from logs means a compromise produces no anomaly."
+          }
+        },
+        {
+          "title": "Access Keys Rotated 90 Days",
+          "pass": "no active access key older than 90 days",
+          "console": {
+            "verify": "IAM > Users > the `Active key age` column shows no value above 90 days",
+            "fix": "IAM > Users > <user> > Security credentials > Access keys > Create access key > deploy the new key to every consumer; then select the old key > Actions > Deactivate > Deactivate > Actions > Delete > type the key ID > Delete"
+          },
+          "cli": {
+            "verify": [
+              "aws iam list-users --query 'Users[].UserName' --output text | tr '\\t' '\\n' | while read u; do\n  aws iam list-access-keys --user-name \"$u\" \\\n    --query \"AccessKeyMetadata[?Status=='Active'].[UserName,AccessKeyId,CreateDate]\" --output text\ndone"
+            ],
+            "fix": [
+              "aws iam create-access-key --user-name <user>",
+              "aws iam update-access-key --user-name <user> --access-key-id <old-id> --status Inactive",
+              "aws iam delete-access-key --user-name <user> --access-key-id <old-id>"
+            ],
+            "expect": "every `CreateDate` is within 90 days. The longer a key lives, the more places it has been copied to - CI config, a laptop, a shared note."
+          }
+        },
+        {
+          "title": "IAM Access Analyzer in Use",
+          "pass": "an `ACTIVE` analyzer exists in every region in use",
+          "console": {
+            "verify": "IAM > Access Analyzer > Analyzer settings > an analyzer with `Status` = `Active` and `Zone of trust` = `Organization` (or `Account`) is listed in every region in use",
+            "fix": "IAM > Access Analyzer > Analyzer settings > Create analyzer > Findings type `External access analysis` > Zone of trust `Current organization` > Create analyzer; repeat in every region in use"
+          },
+          "cli": {
+            "verify": [
+              "aws accessanalyzer list-analyzers \\\n  --query \"analyzers[?status=='ACTIVE'].{name:name, type:type}\" --output table"
+            ],
+            "fix": [
+              "aws accessanalyzer create-analyzer --analyzer-name org-analyzer --type ORGANIZATION"
+            ],
+            "expect": "at least one row, with `type` = `ORGANIZATION` if you use AWS Organizations. Access Analyzer is what tells you a bucket, role, key or secret has become reachable from outside your trust zone."
+          }
+        },
+        {
+          "title": "MFA Device Deactivated",
+          "pass": "no unexplained `DeactivateMFADevice` event, and an alarm covers it",
+          "console": {
+            "verify": "CloudTrail > Event history > Lookup attributes `Event name` = `DeactivateMFADevice` > every event maps to a known device replacement, and CloudWatch > Alarms > All alarms > an alarm on the metric of the `DeactivateMFADevice` metric filter shows `Actions` = `Actions enabled` with an SNS topic",
+            "fix": "IAM > Users > <user> > Security credentials > Multi-factor authentication (MFA) > Assign MFA device > re-register the device > Add MFA; then CloudWatch > Logs > Log groups > <cloudtrail-log-group> > Metric filters > Create metric filter > Filter pattern `{ ($.eventName = \"DeactivateMFADevice\") || ($.eventName = \"DeleteVirtualMFADevice\") }` > Next > Filter name `MFADeactivated`, Metric namespace `CISBenchmark`, Metric name `MFADeactivated`, Metric value `1` > Next > Create metric filter > select the filter > Create alarm > Threshold `Greater/Equal` than `1` > Next > Notification > an on-call SNS topic > Next > Alarm name `MFADeactivated` > Create alarm"
+          },
+          "cli": {
+            "verify": [
+              "aws cloudtrail lookup-events --lookup-attributes AttributeKey=EventName,AttributeValue=DeactivateMFADevice \\\n  --max-results 20 --query 'Events[].{Time:EventTime, By:Username}' --output table",
+              "aws logs describe-metric-filters --log-group-name <cloudtrail-log-group> \\\n  --query \"metricFilters[?contains(filterPattern, 'DeactivateMFADevice')].{name:filterName, metric:metricTransformations[0].metricName}\" \\\n  --output table",
+              "aws cloudwatch describe-alarms \\\n  --query 'MetricAlarms[].{name:AlarmName, metric:MetricName, actions:AlarmActions}' --output table"
+            ],
+            "fix": [
+              "aws logs put-metric-filter --log-group-name <cloudtrail-log-group> --filter-name MFADeactivated \\\n  --filter-pattern '{ ($.eventName = \"DeactivateMFADevice\") || ($.eventName = \"DeleteVirtualMFADevice\") }' \\\n  --metric-transformations metricName=MFADeactivated,metricNamespace=CISBenchmark,metricValue=1",
+              "aws cloudwatch put-metric-alarm --alarm-name MFADeactivated --namespace CISBenchmark --metric-name MFADeactivated \\\n  --statistic Sum --period 300 --threshold 1 --comparison-operator GreaterThanOrEqualToThreshold \\\n  --evaluation-periods 1 --alarm-actions <sns-topic-arn>"
+            ],
+            "expect": "every event maps to a known device replacement, the second command returns a filter, and that filter's `metric` appears in the third command's output with a non-empty `actions` list. Deactivating MFA is a standard step in an account takeover because it is quieter than changing a password."
+          }
+        },
+        {
+          "title": "Privileged AWS IAM User Has Been Created",
+          "pass": "every `CreateUser` event maps to an approved request, with an alarm in place",
+          "console": {
+            "verify": "CloudTrail > Event history > Lookup attributes `Event name` = `CreateUser` > every event maps to an approved request, and CloudWatch > Alarms > All alarms > an alarm on the metric of the `CreateUser` metric filter shows `Actions` = `Actions enabled` with an SNS topic",
+            "fix": "IAM > Users > select any unrecognised user > Delete > type the user name > Delete; then CloudWatch > Logs > Log groups > <cloudtrail-log-group> > Metric filters > Create metric filter > Filter pattern `{ ($.eventName = \"CreateUser\") || ($.eventName = \"AttachUserPolicy\") || ($.eventName = \"CreateAccessKey\") }` > Next > Filter name `UserCreated`, Metric namespace `CISBenchmark`, Metric name `UserCreated`, Metric value `1` > Next > Create metric filter > select the filter > Create alarm > Threshold `Greater/Equal` than `1` > Next > Notification > an on-call SNS topic > Next > Alarm name `UserCreated` > Create alarm"
+          },
+          "cli": {
+            "verify": [
+              "aws cloudtrail lookup-events --lookup-attributes AttributeKey=EventName,AttributeValue=CreateUser \\\n  --max-results 20 --query 'Events[].{Time:EventTime, By:Username, Resources:Resources[].ResourceName}' --output table",
+              "aws logs describe-metric-filters --log-group-name <cloudtrail-log-group> \\\n  --query \"metricFilters[?contains(filterPattern, 'CreateUser')].{name:filterName, metric:metricTransformations[0].metricName}\" \\\n  --output table",
+              "aws cloudwatch describe-alarms \\\n  --query 'MetricAlarms[].{name:AlarmName, metric:MetricName, actions:AlarmActions}' --output table"
+            ],
+            "fix": [
+              "aws iam delete-user --user-name <unrecognised-user>",
+              "aws logs put-metric-filter --log-group-name <cloudtrail-log-group> --filter-name UserCreated \\\n  --filter-pattern '{ ($.eventName = \"CreateUser\") || ($.eventName = \"AttachUserPolicy\") || ($.eventName = \"CreateAccessKey\") }' \\\n  --metric-transformations metricName=UserCreated,metricNamespace=CISBenchmark,metricValue=1",
+              "aws cloudwatch put-metric-alarm --alarm-name UserCreated --namespace CISBenchmark --metric-name UserCreated \\\n  --statistic Sum --period 300 --threshold 1 --comparison-operator GreaterThanOrEqualToThreshold \\\n  --evaluation-periods 1 --alarm-actions <sns-topic-arn>"
+            ],
+            "expect": "every user created in the window is one you expected, the second command returns a filter, and that filter's `metric` appears in the third command's output with a non-empty `actions` list. Creating a second admin identity is how an attacker keeps access after the original entry point is closed."
+          }
+        },
+        {
+          "title": "IAM Configuration Changes",
+          "pass": "a metric filter and alarm exist for IAM configuration changes",
+          "console": {
+            "verify": "CloudWatch > Logs > Log groups > <cloudtrail-log-group> > Metric filters > a filter whose pattern matches `iam.amazonaws.com` (or the specific policy and role event names) is listed, and CloudWatch > Alarms > All alarms > an alarm on that filter's metric shows `Actions` = `Actions enabled` with an SNS topic",
+            "fix": "CloudWatch > Logs > Log groups > <cloudtrail-log-group> > Metric filters > Create metric filter > Filter pattern `{ ($.eventSource = \"iam.amazonaws.com\") && (($.eventName = \"Put*Policy\") || ($.eventName = \"Attach*Policy\") || ($.eventName = \"Create*\") || ($.eventName = \"Delete*\")) }` > Next > Filter name `IAMChanges`, Metric namespace `CISBenchmark`, Metric name `IAMChanges`, Metric value `1` > Next > Create metric filter > select the filter > Create alarm > Threshold `Greater/Equal` than `1` > Next > Notification > an SNS topic with a real subscriber > Next > Alarm name `IAMChanges` > Create alarm"
+          },
+          "cli": {
+            "verify": [
+              "aws logs describe-metric-filters --log-group-name <cloudtrail-log-group> \\\n  --query 'metricFilters[].{name:filterName, pattern:filterPattern, metric:metricTransformations[0].metricName}' --output table",
+              "aws cloudwatch describe-alarms \\\n  --query 'MetricAlarms[].{name:AlarmName, metric:MetricName, actions:AlarmActions}' --output table"
+            ],
+            "fix": [
+              "aws logs put-metric-filter --log-group-name <cloudtrail-log-group> --filter-name IAMChanges \\\n  --filter-pattern '{ ($.eventSource = \"iam.amazonaws.com\") && (($.eventName = \"Put*Policy\") || ($.eventName = \"Attach*Policy\") || ($.eventName = \"Create*\") || ($.eventName = \"Delete*\")) }' \\\n  --metric-transformations metricName=IAMChanges,metricNamespace=CISBenchmark,metricValue=1",
+              "aws cloudwatch put-metric-alarm --alarm-name IAMChanges --namespace CISBenchmark --metric-name IAMChanges \\\n  --statistic Sum --period 300 --threshold 1 --comparison-operator GreaterThanOrEqualToThreshold \\\n  --evaluation-periods 1 --alarm-actions <sns-topic-arn>"
+            ],
+            "expect": "a filter matching IAM events (`iam.amazonaws.com`, or the specific policy and role events) exists, and its `metric` appears in the second command's output with a non-empty `actions` list. A filter with no alarm produces a number nobody looks at."
+          }
+        },
+        {
+          "title": "Sign-In Events",
+          "pass": "a metric filter and alarm exist for console sign-in without MFA and for failed sign-ins",
+          "console": {
+            "verify": "CloudWatch > Logs > Log groups > <cloudtrail-log-group> > Metric filters > one filter matches `ConsoleLogin` with `MFAUsed != \"Yes\"` and another matches `errorMessage = \"Failed authentication\"`, and CloudWatch > Alarms > All alarms > an alarm on each filter's metric shows `Actions` = `Actions enabled` with an SNS topic",
+            "fix": "CloudWatch > Logs > Log groups > <cloudtrail-log-group> > Metric filters > Create metric filter > Filter pattern `{ ($.eventName = \"ConsoleLogin\") && ($.additionalEventData.MFAUsed != \"Yes\") && ($.userIdentity.type = \"IAMUser\") }` > Next > Filter name `ConsoleSignInWithoutMFA`, Metric namespace `CISBenchmark`, Metric name `ConsoleSignInWithoutMFA`, Metric value `1` > Next > Create metric filter > select the filter > Create alarm > Threshold `Greater/Equal` than `1` > Next > Notification > an SNS topic > Next > Alarm name `ConsoleSignInWithoutMFA` > Create alarm; repeat with Filter pattern `{ ($.eventName = \"ConsoleLogin\") && ($.errorMessage = \"Failed authentication\") }` and name `ConsoleSignInFailures`"
+          },
+          "cli": {
+            "verify": [
+              "aws logs describe-metric-filters --log-group-name <cloudtrail-log-group> \\\n  --query \"metricFilters[?contains(filterPattern, 'ConsoleLogin')].{name:filterName, pattern:filterPattern, metric:metricTransformations[0].metricName}\" \\\n  --output table",
+              "aws cloudwatch describe-alarms \\\n  --query 'MetricAlarms[].{name:AlarmName, metric:MetricName, actions:AlarmActions}' --output table"
+            ],
+            "fix": [
+              "aws logs put-metric-filter --log-group-name <cloudtrail-log-group> --filter-name ConsoleSignInWithoutMFA \\\n  --filter-pattern '{ ($.eventName = \"ConsoleLogin\") && ($.additionalEventData.MFAUsed != \"Yes\") && ($.userIdentity.type = \"IAMUser\") }' \\\n  --metric-transformations metricName=ConsoleSignInWithoutMFA,metricNamespace=CISBenchmark,metricValue=1",
+              "aws logs put-metric-filter --log-group-name <cloudtrail-log-group> --filter-name ConsoleSignInFailures \\\n  --filter-pattern '{ ($.eventName = \"ConsoleLogin\") && ($.errorMessage = \"Failed authentication\") }' \\\n  --metric-transformations metricName=ConsoleSignInFailures,metricNamespace=CISBenchmark,metricValue=1",
+              "aws cloudwatch put-metric-alarm --alarm-name ConsoleSignInWithoutMFA --namespace CISBenchmark \\\n  --metric-name ConsoleSignInWithoutMFA --statistic Sum --period 300 --threshold 1 \\\n  --comparison-operator GreaterThanOrEqualToThreshold --evaluation-periods 1 --alarm-actions <sns-topic-arn>"
+            ],
+            "expect": "filters exist for both `ConsoleLogin` with `additionalEventData.MFAUsed = \"No\"` and for `errorMessage = \"Failed authentication\"`, and each filter's `metric` appears in the second command's output with a non-empty `actions` list. Password spraying is only visible if failures are counted."
+          }
+        },
+        {
+          "title": "Enable S3 Block Public Access for AWS Accounts",
+          "pass": "all four account-level block settings are `true`",
+          "console": {
+            "verify": "S3 > Block Public Access settings for this account > all four settings under `Block all public access` read `On`",
+            "fix": "S3 > Block Public Access settings for this account > Edit > check `Block all public access` > Save changes > type `confirm` > Confirm"
+          },
+          "cli": {
+            "verify": [
+              "aws s3control get-public-access-block --account-id $(aws sts get-caller-identity --query Account --output text) \\\n  --query 'PublicAccessBlockConfiguration'"
+            ],
+            "fix": [
+              "aws s3control put-public-access-block --account-id <account-id> \\\n  --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"
+            ],
+            "expect": "`BlockPublicAcls`, `IgnorePublicAcls`, `BlockPublicPolicy` and `RestrictPublicBuckets` are all `true` (a `NoSuchPublicAccessBlockConfiguration` error means it is not configured at all). This is the account-wide backstop that survives a mistake in any single bucket policy."
+          }
+        },
+        {
+          "title": "Enable S3 Block Public Access for S3 Buckets",
+          "pass": "all four block settings are `true` on every bucket",
+          "console": {
+            "verify": "S3 > General purpose buckets > <bucket> > Permissions > Block public access (bucket settings) > all four settings read `On`",
+            "fix": "S3 > General purpose buckets > <bucket> > Permissions > Block public access (bucket settings) > Edit > check `Block all public access` > Save changes > type `confirm` > Confirm"
+          },
+          "cli": {
+            "verify": [
+              "aws s3api list-buckets --query 'Buckets[].Name' --output text | tr '\\t' '\\n' | while read b; do\n  echo \"== $b\"\n  aws s3api get-public-access-block --bucket \"$b\" --query 'PublicAccessBlockConfiguration' 2>&1 | tr -d '\\n'\n  echo\ndone"
+            ],
+            "fix": [
+              "aws s3api put-public-access-block --bucket <bucket> \\\n  --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"
+            ],
+            "expect": "every bucket returns all four settings `true`. An error instead of a configuration means that bucket relies solely on the account setting, which a future administrator can relax."
+          }
+        },
+        {
+          "title": "S3 Bucket Public 'READ' Access",
+          "pass": "no bucket ACL grants `AllUsers` or `AuthenticatedUsers`",
+          "console": {
+            "verify": "S3 > General purpose buckets > <bucket> > Permissions > Access control list (ACL) > no grant is listed for `Everyone (public access)` or `Authenticated users group (anyone with an AWS account)`",
+            "fix": "S3 > General purpose buckets > <bucket> > Permissions > Access control list (ACL) > Edit > clear every box under `Everyone (public access)` and `Authenticated users group` > Save changes; then Permissions > Object Ownership > Edit > `ACLs disabled (recommended)` > Save changes"
+          },
+          "cli": {
+            "verify": [
+              "aws s3api list-buckets --query 'Buckets[].Name' --output text | tr '\\t' '\\n' | while read b; do\n  g=$(aws s3api get-bucket-acl --bucket \"$b\" \\\n    --query \"Grants[?contains(to_string(Grantee.URI), 'AllUsers') || contains(to_string(Grantee.URI), 'AuthenticatedUsers')].Permission\" \\\n    --output text 2>/dev/null)\n  [ -n \"$g\" ] && echo \"$b: $g\"\ndone"
+            ],
+            "fix": [
+              "aws s3api put-bucket-acl --bucket <bucket> --acl private",
+              "aws s3api put-bucket-ownership-controls --bucket <bucket> \\\n  --ownership-controls 'Rules=[{ObjectOwnership=BucketOwnerEnforced}]'"
+            ],
+            "expect": "no output. `AllUsers` is the entire internet; `AuthenticatedUsers` is every AWS account holder, which is not meaningfully narrower."
+          }
+        },
+        {
+          "title": "S3 Bucket Public Access Via Policy",
+          "pass": "no bucket policy allows `Principal: \"*\"` without a restricting condition",
+          "console": {
+            "verify": "S3 > General purpose buckets > the `Access` column shows no bucket marked `Public`, and <bucket> > Permissions > Bucket policy > every statement with `\"Principal\": \"*\"` carries a `Condition` such as `aws:SourceVpce` or a CloudFront origin access control",
+            "fix": "S3 > General purpose buckets > <bucket> > Permissions > Bucket policy > Edit > replace the wildcard principal with the specific role ARNs that need access (or remove the statement) > Save changes"
+          },
+          "cli": {
+            "verify": [
+              "aws s3api list-buckets --query 'Buckets[].Name' --output text | tr '\\t' '\\n' | while read b; do\n  s=$(aws s3api get-bucket-policy-status --bucket \"$b\" --query 'PolicyStatus.IsPublic' --output text 2>/dev/null)\n  [ \"$s\" = \"True\" ] && echo \"PUBLIC: $b\"\ndone",
+              "aws s3api get-bucket-policy --bucket <bucket> --query Policy --output text"
+            ],
+            "fix": [
+              "aws s3api delete-bucket-policy --bucket <bucket>",
+              "aws s3api put-bucket-policy --bucket <bucket> --policy file://policy.json"
+            ],
+            "expect": "the loop prints nothing, and for any bucket it does flag, the policy's wildcard principal is paired with a hard condition such as `aws:SourceVpce` or a CloudFront OAC. An unconditioned wildcard principal is the whole internet."
+          }
+        },
+        {
+          "title": "S3 Cross Account Access",
+          "pass": "every external account in a bucket policy is known and approved",
+          "console": {
+            "verify": "S3 > General purpose buckets > <bucket> > Permissions > Bucket policy > every account ID in a principal ARN is your own or a current, documented partner",
+            "fix": "S3 > General purpose buckets > <bucket> > Permissions > Bucket policy > Edit > remove the stale principal > Save changes"
+          },
+          "cli": {
+            "verify": [
+              "aws s3api list-buckets --query 'Buckets[].Name' --output text | tr '\\t' '\\n' | while read b; do\n  p=$(aws s3api get-bucket-policy --bucket \"$b\" --query Policy --output text 2>/dev/null)\n  [ -n \"$p\" ] && echo \"$p\" | grep -oE 'arn:aws:iam::[0-9]{12}' | sort -u | sed \"s|^|$b: |\"\ndone"
+            ],
+            "fix": [
+              "aws s3api put-bucket-policy --bucket <bucket> --policy file://policy.json"
+            ],
+            "expect": "every account ID other than your own is a current, documented partner. Data leaves through forgotten cross-account grants more often than through public buckets."
+          }
+        },
+        {
+          "title": "S3 Bucket Logging Enabled",
+          "pass": "every bucket has a `LoggingEnabled` target",
+          "console": {
+            "verify": "S3 > General purpose buckets > <bucket> > Properties > Server access logging > reads `Enabled` with a destination bucket",
+            "fix": "S3 > General purpose buckets > <bucket> > Properties > Server access logging > Edit > `Enable` > Destination `s3://<log-bucket>/<bucket>/` > Save changes"
+          },
+          "cli": {
+            "verify": [
+              "aws s3api list-buckets --query 'Buckets[].Name' --output text | tr '\\t' '\\n' | while read b; do\n  t=$(aws s3api get-bucket-logging --bucket \"$b\" --query 'LoggingEnabled.TargetBucket' --output text 2>/dev/null)\n  echo \"$b: ${t:-NONE}\"\ndone"
+            ],
+            "fix": [
+              "aws s3api put-bucket-logging --bucket <bucket> \\\n  --bucket-logging-status '{\"LoggingEnabled\":{\"TargetBucket\":\"<log-bucket>\",\"TargetPrefix\":\"<bucket>/\"}}'"
+            ],
+            "expect": "no bucket shows `NONE` or `None`, except the log target itself. Without access logging there is no record of what an attacker read, which turns a contained incident into an unbounded disclosure notification."
+          }
+        },
+        {
+          "title": "S3 Configuration Changes",
+          "pass": "a metric filter and alarm exist for S3 policy and ACL changes",
+          "console": {
+            "verify": "CloudWatch > Logs > Log groups > <cloudtrail-log-group> > Metric filters > a filter whose pattern covers `PutBucketPolicy`, `PutBucketAcl`, `DeleteBucketPolicy` and `PutBucketPublicAccessBlock` is listed, and CloudWatch > Alarms > All alarms > an alarm on that filter's metric shows `Actions` = `Actions enabled` with an SNS topic",
+            "fix": "CloudWatch > Logs > Log groups > <cloudtrail-log-group> > Metric filters > Create metric filter > Filter pattern `{ ($.eventSource = \"s3.amazonaws.com\") && (($.eventName = \"PutBucketAcl\") || ($.eventName = \"PutBucketPolicy\") || ($.eventName = \"DeleteBucketPolicy\") || ($.eventName = \"PutBucketPublicAccessBlock\")) }` > Next > Filter name `S3PolicyChanges`, Metric namespace `CISBenchmark`, Metric name `S3PolicyChanges`, Metric value `1` > Next > Create metric filter > select the filter > Create alarm > Threshold `Greater/Equal` than `1` > Next > Notification > an SNS topic > Next > Alarm name `S3PolicyChanges` > Create alarm"
+          },
+          "cli": {
+            "verify": [
+              "aws logs describe-metric-filters --log-group-name <cloudtrail-log-group> \\\n  --query \"metricFilters[?contains(filterPattern, 's3.amazonaws.com')].{name:filterName, pattern:filterPattern, metric:metricTransformations[0].metricName}\" \\\n  --output table",
+              "aws cloudwatch describe-alarms \\\n  --query 'MetricAlarms[].{name:AlarmName, metric:MetricName, actions:AlarmActions}' --output table"
+            ],
+            "fix": [
+              "aws logs put-metric-filter --log-group-name <cloudtrail-log-group> --filter-name S3PolicyChanges \\\n  --filter-pattern '{ ($.eventSource = \"s3.amazonaws.com\") && (($.eventName = \"PutBucketAcl\") || ($.eventName = \"PutBucketPolicy\") || ($.eventName = \"DeleteBucketPolicy\") || ($.eventName = \"PutBucketPublicAccessBlock\")) }' \\\n  --metric-transformations metricName=S3PolicyChanges,metricNamespace=CISBenchmark,metricValue=1",
+              "aws cloudwatch put-metric-alarm --alarm-name S3PolicyChanges --namespace CISBenchmark --metric-name S3PolicyChanges \\\n  --statistic Sum --period 300 --threshold 1 --comparison-operator GreaterThanOrEqualToThreshold \\\n  --evaluation-periods 1 --alarm-actions <sns-topic-arn>"
+            ],
+            "expect": "a filter covering `PutBucketPolicy`, `PutBucketAcl`, `DeleteBucketPolicy` and `PutBucketPublicAccessBlock` exists, and its `metric` appears in the second command's output with a non-empty `actions` list. Making a bucket public is a single API call."
+          }
+        },
+        {
+          "title": "Publicly Accessible CloudTrail Buckets",
+          "pass": "no CloudTrail bucket is public",
+          "console": {
+            "verify": "CloudTrail > Trails > <trail> > General details > note the `Trail log location` bucket; then S3 > General purpose buckets > that bucket's `Access` column reads `Bucket and objects not public`",
+            "fix": "S3 > General purpose buckets > <bucket> > Permissions > Block public access (bucket settings) > Edit > check `Block all public access` > Save changes > type `confirm` > Confirm; then Permissions > Bucket policy > Edit > remove the public statement > Save changes"
+          },
+          "cli": {
+            "verify": [
+              "aws cloudtrail describe-trails --query 'trailList[].S3BucketName' --output text | tr '\\t' '\\n' | sort -u | while read b; do\n  echo \"$b: $(aws s3api get-bucket-policy-status --bucket \"$b\" --query 'PolicyStatus.IsPublic' --output text 2>/dev/null)\"\ndone"
+            ],
+            "fix": [
+              "aws s3api put-public-access-block --bucket <bucket> \\\n  --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"
+            ],
+            "expect": "`False` for every bucket. A public CloudTrail bucket hands over a complete map of your account - principals, resources, API patterns - and lets an attacker confirm whether their activity was recorded."
+          }
+        },
+        {
+          "title": "EC2 Instance Not In Public Subnet",
+          "pass": "no application or data instance sits in a subnet with a route to an internet gateway",
+          "console": {
+            "verify": "EC2 > Instances > the `Public IPv4 address` column is empty except for bastions and public load balancer targets; then VPC > Subnets > <subnet> > Route table > Routes > no `0.0.0.0/0` route with an `igw-` target on an application subnet",
+            "fix": "EC2 > Instances > select the instance > Actions > Image and templates > Create image > Create image; then EC2 > AMIs > select the image > Launch instance from AMI > Network settings > Subnet = a private subnet > Auto-assign public IP `Disable` > Launch instance; then terminate the original and reach the new one through Systems Manager > Session Manager"
+          },
+          "cli": {
+            "verify": [
+              "aws ec2 describe-instances \\\n  --query \"Reservations[].Instances[].{id:InstanceId, subnet:SubnetId, public:PublicIpAddress, name:Tags[?Key=='Name'].Value|[0]}\" \\\n  --output table",
+              "aws ec2 describe-route-tables --filters Name=association.subnet-id,Values=<subnet> \\\n  --query 'RouteTables[].Routes[].[DestinationCidrBlock,GatewayId]' --output table"
+            ],
+            "fix": [
+              "aws ec2 run-instances --image-id <ami> --instance-type <type> --subnet-id <private-subnet> \\\n  --security-group-ids <sg> --iam-instance-profile Name=<profile> --no-associate-public-ip-address",
+              "aws ec2 terminate-instances --instance-ids <old-instance-id>"
+            ],
+            "expect": "only instances that must terminate inbound traffic (a bastion, a public load balancer target) have a `public` address, and no application subnet's route table pairs `0.0.0.0/0` with an `igw-` gateway. A public subnet puts every instance in it one security-group rule away from the internet."
+          }
+        },
+        {
+          "title": "Disable Public IP Address Assignment for EC2 Instances",
+          "pass": "`MapPublicIpOnLaunch` = `false` on every subnet",
+          "console": {
+            "verify": "VPC > Subnets > the `Auto-assign public IPv4 address` column reads `No` for every subnet that is not deliberately public",
+            "fix": "VPC > Subnets > select the subnet > Actions > Edit subnet settings > uncheck `Enable auto-assign public IPv4 address` > Save"
+          },
+          "cli": {
+            "verify": [
+              "aws ec2 describe-subnets \\\n  --query 'Subnets[].{id:SubnetId, vpc:VpcId, autoPublicIp:MapPublicIpOnLaunch}' --output table"
+            ],
+            "fix": [
+              "aws ec2 modify-subnet-attribute --subnet-id <subnet> --no-map-public-ip-on-launch"
+            ],
+            "expect": "`autoPublicIp` is `False` everywhere except deliberately public subnets. When it is `True`, every instance launched into that subnet becomes internet-reachable by default, including ones launched by autoscaling."
+          }
+        },
+        {
+          "title": "App-Tier Publicly Shared AMI",
+          "pass": "no AMI backing an application-tier instance is public",
+          "console": {
+            "verify": "EC2 > Instances > <instance> > Details > Instance summary > note the `AMI ID`; then EC2 > AMIs > filter `Owned by me` > that AMI's `Visibility` column reads `Private`",
+            "fix": "EC2 > AMIs > select the AMI > Actions > Edit AMI permissions > `Private` > Save changes; then rebuild the affected instances from a private image and rotate every credential the old image contained"
+          },
+          "cli": {
+            "verify": [
+              "aws ec2 describe-instances --query 'Reservations[].Instances[].ImageId' --output text | tr '\\t' '\\n' | sort -u | while read i; do\n  p=$(aws ec2 describe-images --image-ids \"$i\" --query 'Images[0].Public' --output text 2>/dev/null)\n  [ \"$p\" = \"True\" ] && echo \"public AMI in use: $i\"\ndone"
+            ],
+            "fix": [
+              "aws ec2 modify-image-attribute --image-id <ami> --launch-permission \"Remove=[{Group=all}]\""
+            ],
+            "expect": "no output. A public image backing a running application tier leaks whatever is baked into it, and the blast radius is highest on the tier that is actually serving traffic."
+          }
+        },
+        {
+          "title": "Publicly Shared AMI",
+          "pass": "no owned AMI has public launch permission",
+          "console": {
+            "verify": "EC2 > AMIs > filter `Owned by me` > the `Visibility` column reads `Private` on every row",
+            "fix": "EC2 > AMIs > select the AMI > Actions > Edit AMI permissions > `Private` > Save changes"
+          },
+          "cli": {
+            "verify": [
+              "aws ec2 describe-images --owners self --query \"Images[?Public].{id:ImageId, name:Name}\" --output table"
+            ],
+            "fix": [
+              "aws ec2 modify-image-attribute --image-id <ami> --launch-permission \"Remove=[{Group=all}]\""
+            ],
+            "expect": "no rows. A public AMI can be launched by anyone, and images routinely carry baked-in credentials, source code and internal hostnames in their filesystem."
+          }
+        },
+        {
+          "title": "AMI Cross-Account Access",
+          "pass": "every account with AMI launch permission is known and approved",
+          "console": {
+            "verify": "EC2 > AMIs > filter `Owned by me` > <ami> > Permissions > every account ID under `Shared accounts` is a current member of your Organization or a documented partner",
+            "fix": "EC2 > AMIs > select the AMI > Actions > Edit AMI permissions > Shared accounts > Remove next to the account ID > Save changes"
+          },
+          "cli": {
+            "verify": [
+              "aws ec2 describe-images --owners self --query 'Images[].ImageId' --output text | tr '\\t' '\\n' | while read i; do\n  a=$(aws ec2 describe-image-attribute --image-id \"$i\" --attribute launchPermission \\\n    --query 'LaunchPermissions[].UserId' --output text)\n  [ -n \"$a\" ] && echo \"$i: $a\"\ndone"
+            ],
+            "fix": [
+              "aws ec2 modify-image-attribute --image-id <ami> --launch-permission \"Remove=[{UserId=<account-id>}]\""
+            ],
+            "expect": "every account ID is a current member of your Organization or a documented partner. Shared AMIs are copied on first launch, so revoking access later does not recall what was taken."
+          }
+        },
+        {
+          "title": "EC2 Instance Using IAM Roles",
+          "pass": "every instance has an `IamInstanceProfile`",
+          "console": {
+            "verify": "EC2 > Instances > <instance> > Details > Instance details > `IAM Role` shows a role name for every running instance",
+            "fix": "EC2 > Instances > select the instance > Actions > Security > Modify IAM role > choose the role > Update IAM role; then delete and rotate the static access key it replaces"
+          },
+          "cli": {
+            "verify": [
+              "aws ec2 describe-instances \\\n  --query \"Reservations[].Instances[?State.Name=='running'].{id:InstanceId, profile:IamInstanceProfile.Arn}\" --output table"
+            ],
+            "fix": [
+              "aws ec2 associate-iam-instance-profile --instance-id <id> --iam-instance-profile Name=<profile>"
+            ],
+            "expect": "no instance has a null `profile`. An instance without a role is almost always authenticating with a static access key written into the filesystem or an environment variable."
+          }
+        },
+        {
+          "title": "Require IMDSv2 for EC2 Instances",
+          "pass": "`HttpTokens` = `required` on every instance",
+          "console": {
+            "verify": "EC2 > Instances > <instance> > Details > Instance details > `IMDSv2` reads `Required`",
+            "fix": "EC2 > Instances > select the instance > Actions > Instance settings > Modify instance metadata options > IMDSv2 `Required` > Metadata response hop limit `1` > Save"
+          },
+          "cli": {
+            "verify": [
+              "aws ec2 describe-instances \\\n  --query \"Reservations[].Instances[?State.Name=='running'].{id:InstanceId, tokens:MetadataOptions.HttpTokens, hops:MetadataOptions.HttpPutResponseHopLimit}\" \\\n  --output table"
+            ],
+            "fix": [
+              "aws ec2 modify-instance-metadata-options --instance-id <id> --http-tokens required \\\n  --http-endpoint enabled --http-put-response-hop-limit 1"
+            ],
+            "expect": "`tokens` is `required` and `hops` is `1`. With `optional`, a server-side request forgery in your application can read the instance's role credentials with a single unauthenticated GET - the mechanism behind several large cloud breaches."
+          }
+        },
+        {
+          "title": "Default Security Group Unrestricted",
+          "pass": "every default security group has no ingress and no egress rules",
+          "console": {
+            "verify": "EC2 > Security Groups > filter `Security group name: default` > select each group > the Inbound rules tab and the Outbound rules tab are both empty",
+            "fix": "EC2 > Security Groups > select the default group > Inbound rules > Edit inbound rules > Delete every rule > Save rules; then Outbound rules > Edit outbound rules > Delete every rule > Save rules"
+          },
+          "cli": {
+            "verify": [
+              "aws ec2 describe-security-groups --filters Name=group-name,Values=default \\\n  --query 'SecurityGroups[].{id:GroupId, vpc:VpcId, ingress:length(IpPermissions), egress:length(IpPermissionsEgress)}' \\\n  --output table"
+            ],
+            "fix": [
+              "aws ec2 revoke-security-group-ingress --group-id <sg> \\\n  --ip-permissions \"$(aws ec2 describe-security-groups --group-ids <sg> --query 'SecurityGroups[0].IpPermissions' --output json)\"",
+              "aws ec2 revoke-security-group-egress --group-id <sg> \\\n  --ip-permissions \"$(aws ec2 describe-security-groups --group-ids <sg> --query 'SecurityGroups[0].IpPermissionsEgress' --output json)\""
+            ],
+            "expect": "`ingress` and `egress` are both `0`. The default group is attached to anything launched without an explicit group, so its rules apply to resources nobody meant to expose."
+          }
+        },
+        {
+          "title": "Unrestricted SSH Access",
+          "pass": "no security group allows port 22 from `0.0.0.0/0` or `::/0`",
+          "console": {
+            "verify": "EC2 > Security Groups > filter `Port range: 22` > open each group > Inbound rules > the `Source` column shows no `0.0.0.0/0` or `::/0` on port 22",
+            "fix": "EC2 > Security Groups > select the group > Inbound rules > Edit inbound rules > Delete the port 22 rule whose source is `0.0.0.0/0` or `::/0` > Save rules"
+          },
+          "cli": {
+            "verify": [
+              "aws ec2 describe-security-groups \\\n  --filters Name=ip-permission.from-port,Values=22 Name=ip-permission.to-port,Values=22 Name=ip-permission.cidr,Values=0.0.0.0/0 \\\n  --query 'SecurityGroups[].[GroupId,GroupName]' --output table",
+              "aws ec2 describe-security-groups \\\n  --filters Name=ip-permission.from-port,Values=22 Name=ip-permission.to-port,Values=22 Name=ip-permission.ipv6-cidr,Values=::/0 \\\n  --query 'SecurityGroups[].[GroupId,GroupName]' --output table"
+            ],
+            "fix": [
+              "aws ec2 revoke-security-group-ingress --group-id <sg> --protocol tcp --port 22 --cidr 0.0.0.0/0",
+              "aws ec2 revoke-security-group-ingress --group-id <sg> \\\n  --ip-permissions 'IpProtocol=tcp,FromPort=22,ToPort=22,Ipv6Ranges=[{CidrIpv6=::/0}]'"
+            ],
+            "expect": "both commands return an empty table. Open SSH is scanned and brute-forced continuously; it is the single most exploited misconfiguration in AWS, and SSM Session Manager needs no inbound rule at all."
+          }
+        },
+        {
+          "title": "Unrestricted RDP Access",
+          "pass": "no security group allows port 3389 from `0.0.0.0/0` or `::/0`",
+          "console": {
+            "verify": "EC2 > Security Groups > filter `Port range: 3389` > open each group > Inbound rules > the `Source` column shows no `0.0.0.0/0` or `::/0` on port 3389",
+            "fix": "EC2 > Security Groups > select the group > Inbound rules > Edit inbound rules > Delete the port 3389 rule whose source is `0.0.0.0/0` or `::/0` > Save rules"
+          },
+          "cli": {
+            "verify": [
+              "aws ec2 describe-security-groups \\\n  --filters Name=ip-permission.from-port,Values=3389 Name=ip-permission.to-port,Values=3389 Name=ip-permission.cidr,Values=0.0.0.0/0 \\\n  --query 'SecurityGroups[].[GroupId,GroupName]' --output table",
+              "aws ec2 describe-security-groups \\\n  --filters Name=ip-permission.from-port,Values=3389 Name=ip-permission.to-port,Values=3389 Name=ip-permission.ipv6-cidr,Values=::/0 \\\n  --query 'SecurityGroups[].[GroupId,GroupName]' --output table"
+            ],
+            "fix": [
+              "aws ec2 revoke-security-group-ingress --group-id <sg> --protocol tcp --port 3389 --cidr 0.0.0.0/0",
+              "aws ec2 revoke-security-group-ingress --group-id <sg> \\\n  --ip-permissions 'IpProtocol=tcp,FromPort=3389,ToPort=3389,Ipv6Ranges=[{CidrIpv6=::/0}]'"
+            ],
+            "expect": "both commands return an empty table. Exposed RDP is the primary initial-access vector for ransomware operators; use SSM Session Manager or Fleet Manager remote desktop instead."
+          }
+        },
+        {
+          "title": "Unrestricted MySQL Database Access",
+          "pass": "no security group allows port 3306 from `0.0.0.0/0` or `::/0`",
+          "console": {
+            "verify": "EC2 > Security Groups > filter `Port range: 3306` > open each group > Inbound rules > the `Source` column shows no `0.0.0.0/0` or `::/0` on port 3306",
+            "fix": "EC2 > Security Groups > select the group > Inbound rules > Edit inbound rules > Delete the port 3306 rule whose source is `0.0.0.0/0` or `::/0` > Add rule > Type `MYSQL/Aurora` > Source = the application tier's security group > Save rules"
+          },
+          "cli": {
+            "verify": [
+              "aws ec2 describe-security-groups \\\n  --filters Name=ip-permission.from-port,Values=3306 Name=ip-permission.to-port,Values=3306 Name=ip-permission.cidr,Values=0.0.0.0/0 \\\n  --query 'SecurityGroups[].[GroupId,GroupName]' --output table",
+              "aws ec2 describe-security-groups \\\n  --filters Name=ip-permission.from-port,Values=3306 Name=ip-permission.to-port,Values=3306 Name=ip-permission.ipv6-cidr,Values=::/0 \\\n  --query 'SecurityGroups[].[GroupId,GroupName]' --output table"
+            ],
+            "fix": [
+              "aws ec2 revoke-security-group-ingress --group-id <sg> --protocol tcp --port 3306 --cidr 0.0.0.0/0",
+              "aws ec2 revoke-security-group-ingress --group-id <sg> \\\n  --ip-permissions 'IpProtocol=tcp,FromPort=3306,ToPort=3306,Ipv6Ranges=[{CidrIpv6=::/0}]'",
+              "aws ec2 authorize-security-group-ingress --group-id <sg> --protocol tcp --port 3306 \\\n  --source-group <app-sg>"
+            ],
+            "expect": "both commands return an empty table. A database reachable from the internet is one credential-stuffing run away from full data disclosure."
+          }
+        },
+        {
+          "title": "Unrestricted PostgreSQL Database Access",
+          "pass": "no security group allows port 5432 from `0.0.0.0/0` or `::/0`",
+          "console": {
+            "verify": "EC2 > Security Groups > filter `Port range: 5432` > open each group > Inbound rules > the `Source` column shows no `0.0.0.0/0` or `::/0` on port 5432",
+            "fix": "EC2 > Security Groups > select the group > Inbound rules > Edit inbound rules > Delete the port 5432 rule whose source is `0.0.0.0/0` or `::/0` > Add rule > Type `PostgreSQL` > Source = the application tier's security group > Save rules"
+          },
+          "cli": {
+            "verify": [
+              "aws ec2 describe-security-groups \\\n  --filters Name=ip-permission.from-port,Values=5432 Name=ip-permission.to-port,Values=5432 Name=ip-permission.cidr,Values=0.0.0.0/0 \\\n  --query 'SecurityGroups[].[GroupId,GroupName]' --output table",
+              "aws ec2 describe-security-groups \\\n  --filters Name=ip-permission.from-port,Values=5432 Name=ip-permission.to-port,Values=5432 Name=ip-permission.ipv6-cidr,Values=::/0 \\\n  --query 'SecurityGroups[].[GroupId,GroupName]' --output table"
+            ],
+            "fix": [
+              "aws ec2 revoke-security-group-ingress --group-id <sg> --protocol tcp --port 5432 --cidr 0.0.0.0/0",
+              "aws ec2 revoke-security-group-ingress --group-id <sg> \\\n  --ip-permissions 'IpProtocol=tcp,FromPort=5432,ToPort=5432,Ipv6Ranges=[{CidrIpv6=::/0}]'",
+              "aws ec2 authorize-security-group-ingress --group-id <sg> --protocol tcp --port 5432 \\\n  --source-group <app-sg>"
+            ],
+            "expect": "both commands return an empty table. A PostgreSQL listener on the internet is brute-forced within hours, and only the application tier should ever reach it."
+          }
+        },
+        {
+          "title": "Unrestricted MSSQL Database Access",
+          "pass": "no security group allows port 1433 from `0.0.0.0/0` or `::/0`",
+          "console": {
+            "verify": "EC2 > Security Groups > filter `Port range: 1433` > open each group > Inbound rules > the `Source` column shows no `0.0.0.0/0` or `::/0` on port 1433",
+            "fix": "EC2 > Security Groups > select the group > Inbound rules > Edit inbound rules > Delete the port 1433 rule whose source is `0.0.0.0/0` or `::/0` > Add rule > Type `MSSQL` > Source = the application tier's security group > Save rules"
+          },
+          "cli": {
+            "verify": [
+              "aws ec2 describe-security-groups \\\n  --filters Name=ip-permission.from-port,Values=1433 Name=ip-permission.to-port,Values=1433 Name=ip-permission.cidr,Values=0.0.0.0/0 \\\n  --query 'SecurityGroups[].[GroupId,GroupName]' --output table",
+              "aws ec2 describe-security-groups \\\n  --filters Name=ip-permission.from-port,Values=1433 Name=ip-permission.to-port,Values=1433 Name=ip-permission.ipv6-cidr,Values=::/0 \\\n  --query 'SecurityGroups[].[GroupId,GroupName]' --output table"
+            ],
+            "fix": [
+              "aws ec2 revoke-security-group-ingress --group-id <sg> --protocol tcp --port 1433 --cidr 0.0.0.0/0",
+              "aws ec2 revoke-security-group-ingress --group-id <sg> \\\n  --ip-permissions 'IpProtocol=tcp,FromPort=1433,ToPort=1433,Ipv6Ranges=[{CidrIpv6=::/0}]'",
+              "aws ec2 authorize-security-group-ingress --group-id <sg> --protocol tcp --port 1433 \\\n  --source-group <app-sg>"
+            ],
+            "expect": "both commands return an empty table. SQL Server on the internet is a standing target for `sa` password brute force and `xp_cmdshell` abuse once a login lands."
+          }
+        },
+        {
+          "title": "Unrestricted MongoDB Access",
+          "pass": "no security group allows port 27017 from `0.0.0.0/0` or `::/0`",
+          "console": {
+            "verify": "EC2 > Security Groups > filter `Port range: 27017` > open each group > Inbound rules > the `Source` column shows no `0.0.0.0/0` or `::/0` on port 27017",
+            "fix": "EC2 > Security Groups > select the group > Inbound rules > Edit inbound rules > Delete the port 27017 rule whose source is `0.0.0.0/0` or `::/0` > Save rules; then confirm authentication is enabled on the database itself"
+          },
+          "cli": {
+            "verify": [
+              "aws ec2 describe-security-groups \\\n  --filters Name=ip-permission.from-port,Values=27017 Name=ip-permission.to-port,Values=27017 Name=ip-permission.cidr,Values=0.0.0.0/0 \\\n  --query 'SecurityGroups[].[GroupId,GroupName]' --output table",
+              "aws ec2 describe-security-groups \\\n  --filters Name=ip-permission.from-port,Values=27017 Name=ip-permission.to-port,Values=27017 Name=ip-permission.ipv6-cidr,Values=::/0 \\\n  --query 'SecurityGroups[].[GroupId,GroupName]' --output table"
+            ],
+            "fix": [
+              "aws ec2 revoke-security-group-ingress --group-id <sg> --protocol tcp --port 27017 --cidr 0.0.0.0/0",
+              "aws ec2 revoke-security-group-ingress --group-id <sg> \\\n  --ip-permissions 'IpProtocol=tcp,FromPort=27017,ToPort=27017,Ipv6Ranges=[{CidrIpv6=::/0}]'"
+            ],
+            "expect": "both commands return an empty table. Internet-exposed MongoDB has been mass-swept and ransomed repeatedly, including instances that were only briefly open."
+          }
+        },
+        {
+          "title": "Unrestricted Redis Cache Access",
+          "pass": "no security group allows port 6379 from `0.0.0.0/0` or `::/0`",
+          "console": {
+            "verify": "EC2 > Security Groups > filter `Port range: 6379` > open each group > Inbound rules > the `Source` column shows no `0.0.0.0/0` or `::/0` on port 6379",
+            "fix": "EC2 > Security Groups > select the group > Inbound rules > Edit inbound rules > Delete the port 6379 rule whose source is `0.0.0.0/0` or `::/0` > Save rules; then ElastiCache > Redis OSS caches > <cache> > Modify > enable `AUTH` and `Encryption in transit` > Save changes"
+          },
+          "cli": {
+            "verify": [
+              "aws ec2 describe-security-groups \\\n  --filters Name=ip-permission.from-port,Values=6379 Name=ip-permission.to-port,Values=6379 Name=ip-permission.cidr,Values=0.0.0.0/0 \\\n  --query 'SecurityGroups[].[GroupId,GroupName]' --output table",
+              "aws ec2 describe-security-groups \\\n  --filters Name=ip-permission.from-port,Values=6379 Name=ip-permission.to-port,Values=6379 Name=ip-permission.ipv6-cidr,Values=::/0 \\\n  --query 'SecurityGroups[].[GroupId,GroupName]' --output table"
+            ],
+            "fix": [
+              "aws ec2 revoke-security-group-ingress --group-id <sg> --protocol tcp --port 6379 --cidr 0.0.0.0/0",
+              "aws ec2 revoke-security-group-ingress --group-id <sg> \\\n  --ip-permissions 'IpProtocol=tcp,FromPort=6379,ToPort=6379,Ipv6Ranges=[{CidrIpv6=::/0}]'"
+            ],
+            "expect": "both commands return an empty table. Redis is unauthenticated by default and its `CONFIG` command can write files to disk, so exposure is often direct code execution."
+          }
+        },
+        {
+          "title": "Unrestricted SMTP Access",
+          "pass": "no security group allows port 25 from `0.0.0.0/0` or `::/0`",
+          "console": {
+            "verify": "EC2 > Security Groups > filter `Port range: 25` > open each group > Inbound rules > the `Source` column shows no `0.0.0.0/0` or `::/0` on port 25",
+            "fix": "EC2 > Security Groups > select the group > Inbound rules > Edit inbound rules > Delete the port 25 rule whose source is `0.0.0.0/0` or `::/0` > Save rules; send mail through SES or a managed provider instead of running a relay"
+          },
+          "cli": {
+            "verify": [
+              "aws ec2 describe-security-groups \\\n  --filters Name=ip-permission.from-port,Values=25 Name=ip-permission.to-port,Values=25 Name=ip-permission.cidr,Values=0.0.0.0/0 \\\n  --query 'SecurityGroups[].[GroupId,GroupName]' --output table",
+              "aws ec2 describe-security-groups \\\n  --filters Name=ip-permission.from-port,Values=25 Name=ip-permission.to-port,Values=25 Name=ip-permission.ipv6-cidr,Values=::/0 \\\n  --query 'SecurityGroups[].[GroupId,GroupName]' --output table"
+            ],
+            "fix": [
+              "aws ec2 revoke-security-group-ingress --group-id <sg> --protocol tcp --port 25 --cidr 0.0.0.0/0",
+              "aws ec2 revoke-security-group-ingress --group-id <sg> \\\n  --ip-permissions 'IpProtocol=tcp,FromPort=25,ToPort=25,Ipv6Ranges=[{CidrIpv6=::/0}]'"
+            ],
+            "expect": "both commands return an empty table. An open relay gets your address space blocklisted and your domain used for phishing that appears to come from you."
+          }
+        },
+        {
+          "title": "Unrestricted NetBIOS Access",
+          "pass": "no security group allows ports 137-139 from `0.0.0.0/0` or `::/0`",
+          "console": {
+            "verify": "EC2 > Security Groups > filter `Port range: 137`, then `138`, then `139` > open each group > Inbound rules > the `Source` column shows no `0.0.0.0/0` or `::/0` on ports 137-139",
+            "fix": "EC2 > Security Groups > select the group > Inbound rules > Edit inbound rules > Delete every rule on ports 137, 138 or 139 whose source is `0.0.0.0/0` or `::/0` > Save rules"
+          },
+          "cli": {
+            "verify": [
+              "for p in 137 138 139; do\n  aws ec2 describe-security-groups \\\n    --filters Name=ip-permission.from-port,Values=$p Name=ip-permission.to-port,Values=$p Name=ip-permission.cidr,Values=0.0.0.0/0 \\\n    --query \"SecurityGroups[].[GroupId,GroupName]\" --output text\ndone",
+              "for p in 137 138 139; do\n  aws ec2 describe-security-groups \\\n    --filters Name=ip-permission.from-port,Values=$p Name=ip-permission.to-port,Values=$p Name=ip-permission.ipv6-cidr,Values=::/0 \\\n    --query \"SecurityGroups[].[GroupId,GroupName]\" --output text\ndone"
+            ],
+            "fix": [
+              "for p in 137 138 139; do for proto in tcp udp; do\n  aws ec2 revoke-security-group-ingress --group-id <sg> --protocol $proto --port $p --cidr 0.0.0.0/0\ndone; done",
+              "for p in 137 138 139; do for proto in tcp udp; do\n  aws ec2 revoke-security-group-ingress --group-id <sg> \\\n    --ip-permissions \"IpProtocol=$proto,FromPort=$p,ToPort=$p,Ipv6Ranges=[{CidrIpv6=::/0}]\"\ndone; done"
+            ],
+            "expect": "both loops print nothing. NetBIOS leaks hostnames, workgroup and session data to anyone who asks, and should never cross a VPC boundary."
+          }
+        },
+        {
+          "title": "Unrestricted CIFS Access",
+          "pass": "no security group allows port 445 from `0.0.0.0/0` or `::/0`",
+          "console": {
+            "verify": "EC2 > Security Groups > filter `Port range: 445` > open each group > Inbound rules > the `Source` column shows no `0.0.0.0/0` or `::/0` on port 445",
+            "fix": "EC2 > Security Groups > select the group > Inbound rules > Edit inbound rules > Delete the port 445 rule whose source is `0.0.0.0/0` or `::/0` > Save rules; reach file shares over a VPN or use FSx with private endpoints"
+          },
+          "cli": {
+            "verify": [
+              "aws ec2 describe-security-groups \\\n  --filters Name=ip-permission.from-port,Values=445 Name=ip-permission.to-port,Values=445 Name=ip-permission.cidr,Values=0.0.0.0/0 \\\n  --query 'SecurityGroups[].[GroupId,GroupName]' --output table",
+              "aws ec2 describe-security-groups \\\n  --filters Name=ip-permission.from-port,Values=445 Name=ip-permission.to-port,Values=445 Name=ip-permission.ipv6-cidr,Values=::/0 \\\n  --query 'SecurityGroups[].[GroupId,GroupName]' --output table"
+            ],
+            "fix": [
+              "aws ec2 revoke-security-group-ingress --group-id <sg> --protocol tcp --port 445 --cidr 0.0.0.0/0",
+              "aws ec2 revoke-security-group-ingress --group-id <sg> \\\n  --ip-permissions 'IpProtocol=tcp,FromPort=445,ToPort=445,Ipv6Ranges=[{CidrIpv6=::/0}]'"
+            ],
+            "expect": "both commands return an empty table. SMB on 445 is the port behind EternalBlue and most self-propagating ransomware."
+          }
+        },
+        {
+          "title": "Unrestricted RPC Access",
+          "pass": "no security group allows port 135 from `0.0.0.0/0` or `::/0`",
+          "console": {
+            "verify": "EC2 > Security Groups > filter `Port range: 135` > open each group > Inbound rules > the `Source` column shows no `0.0.0.0/0` or `::/0` on port 135",
+            "fix": "EC2 > Security Groups > select the group > Inbound rules > Edit inbound rules > Delete the port 135 rule whose source is `0.0.0.0/0` or `::/0` > Save rules"
+          },
+          "cli": {
+            "verify": [
+              "aws ec2 describe-security-groups \\\n  --filters Name=ip-permission.from-port,Values=135 Name=ip-permission.to-port,Values=135 Name=ip-permission.cidr,Values=0.0.0.0/0 \\\n  --query 'SecurityGroups[].[GroupId,GroupName]' --output table",
+              "aws ec2 describe-security-groups \\\n  --filters Name=ip-permission.from-port,Values=135 Name=ip-permission.to-port,Values=135 Name=ip-permission.ipv6-cidr,Values=::/0 \\\n  --query 'SecurityGroups[].[GroupId,GroupName]' --output table"
+            ],
+            "fix": [
+              "aws ec2 revoke-security-group-ingress --group-id <sg> --protocol tcp --port 135 --cidr 0.0.0.0/0",
+              "aws ec2 revoke-security-group-ingress --group-id <sg> \\\n  --ip-permissions 'IpProtocol=tcp,FromPort=135,ToPort=135,Ipv6Ranges=[{CidrIpv6=::/0}]'"
+            ],
+            "expect": "both commands return an empty table. The RPC endpoint mapper enumerates the services running on a host and has a long history of remote code execution flaws."
+          }
+        },
+        {
+          "title": "Unrestricted Telnet Access",
+          "pass": "no security group allows port 23 from `0.0.0.0/0` or `::/0`",
+          "console": {
+            "verify": "EC2 > Security Groups > filter `Port range: 23` > open each group > Inbound rules > the `Source` column shows no `0.0.0.0/0` or `::/0` on port 23",
+            "fix": "EC2 > Security Groups > select the group > Inbound rules > Edit inbound rules > Delete the port 23 rule whose source is `0.0.0.0/0` or `::/0` > Save rules; then disable the telnet daemon on the host"
+          },
+          "cli": {
+            "verify": [
+              "aws ec2 describe-security-groups \\\n  --filters Name=ip-permission.from-port,Values=23 Name=ip-permission.to-port,Values=23 Name=ip-permission.cidr,Values=0.0.0.0/0 \\\n  --query 'SecurityGroups[].[GroupId,GroupName]' --output table",
+              "aws ec2 describe-security-groups \\\n  --filters Name=ip-permission.from-port,Values=23 Name=ip-permission.to-port,Values=23 Name=ip-permission.ipv6-cidr,Values=::/0 \\\n  --query 'SecurityGroups[].[GroupId,GroupName]' --output table"
+            ],
+            "fix": [
+              "aws ec2 revoke-security-group-ingress --group-id <sg> --protocol tcp --port 23 --cidr 0.0.0.0/0",
+              "aws ec2 revoke-security-group-ingress --group-id <sg> \\\n  --ip-permissions 'IpProtocol=tcp,FromPort=23,ToPort=23,Ipv6Ranges=[{CidrIpv6=::/0}]'"
+            ],
+            "expect": "both commands return an empty table. Telnet carries credentials in cleartext and has no place in a current environment at all, open or not."
+          }
+        },
+        {
+          "title": "Unrestricted Outbound Access",
+          "pass": "no production security group allows all egress to `0.0.0.0/0`",
+          "console": {
+            "verify": "EC2 > Security Groups > <production group> > Outbound rules > no rule with Type `All traffic` and Destination `0.0.0.0/0`",
+            "fix": "EC2 > Security Groups > select the group > Outbound rules > Edit outbound rules > Delete the `All traffic` to `0.0.0.0/0` rule > Add rule > Type `HTTPS` > Destination = a managed prefix list or VPC endpoint security group > Save rules"
+          },
+          "cli": {
+            "verify": [
+              "aws ec2 describe-security-groups \\\n  --query \"SecurityGroups[?IpPermissionsEgress[?IpProtocol=='-1' && IpRanges[?CidrIp=='0.0.0.0/0']]].{id:GroupId, name:GroupName}\" \\\n  --output table"
+            ],
+            "fix": [
+              "aws ec2 revoke-security-group-egress --group-id <sg> --protocol all --cidr 0.0.0.0/0",
+              "aws ec2 authorize-security-group-egress --group-id <sg> \\\n  --ip-permissions 'IpProtocol=tcp,FromPort=443,ToPort=443,PrefixListIds=[{PrefixListId=<pl-id>}]'"
+            ],
+            "expect": "no production group is listed. Open egress is what turns a foothold into data exfiltration and command-and-control, and it is the default on every new security group, so this needs a deliberate change."
+          }
+        },
+        {
+          "title": "EC2 Security Group Port Range",
+          "pass": "no rule opens a contiguous range of ports",
+          "console": {
+            "verify": "EC2 > Security Groups > <group> > Inbound rules > the `Port range` column shows single ports only, no `<from> - <to>` ranges",
+            "fix": "EC2 > Security Groups > select the group > Inbound rules > Edit inbound rules > Delete the range rule > Add rule for each port actually in use > Save rules"
+          },
+          "cli": {
+            "verify": [
+              "aws ec2 describe-security-groups \\\n  --query \"SecurityGroups[].{id:GroupId, name:GroupName, ranges:IpPermissions[?FromPort!=ToPort].[FromPort,ToPort]}\" \\\n  --output json"
+            ],
+            "fix": [
+              "aws ec2 revoke-security-group-ingress --group-id <sg> --protocol tcp --port <from>-<to> \\\n  --cidr <cidr>",
+              "aws ec2 authorize-security-group-ingress --group-id <sg> --protocol tcp --port <port> --cidr <cidr>"
+            ],
+            "expect": "`ranges` is empty for every group. A range such as 0-65535 or 1024-65535 exposes every service that will ever listen on the host, including ones added after the rule was written."
+          }
+        },
+        {
+          "title": "Default VPC in Use",
+          "pass": "no resources run in a default VPC",
+          "console": {
+            "verify": "VPC > Your VPCs > note every VPC whose `Default VPC` column reads `Yes`; then EC2 > Instances > filter `VPC ID = <vpc>` > the list is empty",
+            "fix": "VPC > Your VPCs > select the default VPC > Actions > Delete VPC > type `delete` > Delete (after migrating workloads to a purpose-built VPC)"
+          },
+          "cli": {
+            "verify": [
+              "aws ec2 describe-vpcs --query 'Vpcs[?IsDefault].VpcId' --output text | tr '\\t' '\\n' | while read v; do\n  echo \"$v: $(aws ec2 describe-instances --filters Name=vpc-id,Values=$v --query 'length(Reservations[].Instances[])')\"\ndone"
+            ],
+            "fix": [
+              "aws ec2 delete-vpc --vpc-id <vpc>"
+            ],
+            "expect": "every default VPC reports `0` instances. Default VPCs ship with a public subnet per availability zone, an internet gateway, and a permissive default security group - none of which were chosen by you."
+          }
+        },
+        {
+          "title": "VPC Flow Logs Enabled",
+          "pass": "every VPC has an active flow log",
+          "console": {
+            "verify": "VPC > Your VPCs > <vpc> > Flow logs > at least one row shows `Status` = `Active` and `Filter` = `All`",
+            "fix": "VPC > Your VPCs > select the VPC > Actions > Create flow log > Filter `All` > Destination = a CloudWatch Logs log group or S3 bucket > IAM role > Create flow log"
+          },
+          "cli": {
+            "verify": [
+              "aws ec2 describe-vpcs --query 'Vpcs[].VpcId' --output text | tr '\\t' '\\n' | while read v; do\n  echo \"$v: $(aws ec2 describe-flow-logs --filter Name=resource-id,Values=$v --query \"length(FlowLogs[?FlowLogStatus=='ACTIVE'])\")\"\ndone"
+            ],
+            "fix": [
+              "aws ec2 create-flow-logs --resource-type VPC --resource-ids <vpc> --traffic-type ALL \\\n  --log-destination-type cloud-watch-logs --log-group-name <group> --deliver-logs-permission-arn <role-arn>"
+            ],
+            "expect": "every VPC reports at least `1`. Without flow logs there is no record of what talked to what, so an intrusion cannot be scoped after the fact."
+          }
+        },
+        {
+          "title": "Unrestricted Network ACL Inbound Traffic",
+          "pass": "no network ACL allows all traffic from `0.0.0.0/0`",
+          "console": {
+            "verify": "VPC > Network ACLs > <acl> > Inbound rules > no rule with Type `All traffic`, Source `0.0.0.0/0` and Allow/Deny `Allow`",
+            "fix": "VPC > Network ACLs > select the ACL > Inbound rules > Edit inbound rules > Remove the blanket allow rule > Add new rule for each specific port and source > Save changes"
+          },
+          "cli": {
+            "verify": [
+              "aws ec2 describe-network-acls \\\n  --query \"NetworkAcls[].{id:NetworkAclId, open:Entries[?!Egress && CidrBlock=='0.0.0.0/0' && RuleAction=='allow' && Protocol=='-1'].RuleNumber}\" \\\n  --output json"
+            ],
+            "fix": [
+              "aws ec2 delete-network-acl-entry --network-acl-id <acl> --rule-number <n> --ingress"
+            ],
+            "expect": "`open` is empty for every ACL. Network ACLs are the subnet-level backstop beneath security groups; a blanket allow removes that layer entirely."
+          }
+        },
+        {
+          "title": "Unrestricted Inbound Traffic on Remote Server Administration Ports",
+          "pass": "no network ACL allows 22 or 3389 from `0.0.0.0/0`",
+          "console": {
+            "verify": "VPC > Network ACLs > <acl> > Inbound rules > no `Allow` rule with Source `0.0.0.0/0` whose `Port range` covers 22 or 3389 or reads `All`",
+            "fix": "VPC > Network ACLs > select the ACL > Inbound rules > Edit inbound rules > change the rule's Source to your administrative CIDR (or Remove it) > Save changes"
+          },
+          "cli": {
+            "verify": [
+              "aws ec2 describe-network-acls \\\n  --query \"NetworkAcls[].{id:NetworkAclId, entries:Entries[?!Egress && CidrBlock=='0.0.0.0/0' && RuleAction=='allow'].{rule:RuleNumber, from:PortRange.From, to:PortRange.To}}\" \\\n  --output json"
+            ],
+            "fix": [
+              "aws ec2 delete-network-acl-entry --network-acl-id <acl> --rule-number <n> --ingress",
+              "aws ec2 create-network-acl-entry --network-acl-id <acl> --rule-number <n> --protocol tcp \\\n  --port-range From=22,To=22 --cidr-block <admin-cidr> --rule-action allow --ingress"
+            ],
+            "expect": "no allow entry whose port range covers 22 or 3389, and no entry with a null `PortRange` (which means all ports). SSM Session Manager needs no inbound access at all, so an open admin port is a choice, not a requirement."
+          }
+        },
+        {
+          "title": "VPC Endpoint Exposed",
+          "pass": "no VPC endpoint policy allows a wildcard principal",
+          "console": {
+            "verify": "VPC > Endpoints > <endpoint> > Policy > no statement with `\"Principal\": \"*\"` lacks a `Condition` on `aws:PrincipalOrgID` or `aws:PrincipalAccount`",
+            "fix": "VPC > Endpoints > select the endpoint > Actions > Manage policy > `Custom` > paste a policy conditioned on `aws:PrincipalOrgID` > Save"
+          },
+          "cli": {
+            "verify": [
+              "aws ec2 describe-vpc-endpoints \\\n  --query 'VpcEndpoints[].{id:VpcEndpointId, service:ServiceName, policy:PolicyDocument}' --output json"
+            ],
+            "fix": [
+              "aws ec2 modify-vpc-endpoint --vpc-endpoint-id <id> --policy-document file://policy.json"
+            ],
+            "expect": "no `policy` grants `\"Principal\": \"*\"` without a condition restricting it to your account or Organization. A permissive endpoint policy lets principals outside your account reach the service through your network path."
+          }
+        },
+        {
+          "title": "VPC Peering Connections To Accounts Outside AWS Organization",
+          "pass": "every peer account is in your Organization or documented",
+          "console": {
+            "verify": "VPC > Peering connections > every value in the `Requester owner ID` and `Accepter owner ID` columns appears under Organizations > AWS accounts or maps to an approved partner",
+            "fix": "VPC > Peering connections > select the connection > Actions > Delete peering connection > check `Delete related route table entries` > Delete"
+          },
+          "cli": {
+            "verify": [
+              "aws ec2 describe-vpc-peering-connections \\\n  --query 'VpcPeeringConnections[].{id:VpcPeeringConnectionId, requester:RequesterVpcInfo.OwnerId, accepter:AccepterVpcInfo.OwnerId, status:Status.Code}' \\\n  --output table",
+              "aws organizations list-accounts --query 'Accounts[].Id' --output text"
+            ],
+            "fix": [
+              "aws ec2 delete-vpc-peering-connection --vpc-peering-connection-id <id>"
+            ],
+            "expect": "every owner ID from the first command appears in the second command's output or maps to an approved partner. A peering connection is a routed network path, not an API grant - it bypasses most identity controls."
+          }
+        },
+        {
+          "title": "CloudTrail Enabled",
+          "pass": "at least one multi-region trail is logging",
+          "console": {
+            "verify": "CloudTrail > Trails > a trail shows `Multi-region trail` = `Yes` and `Status` = `Logging`",
+            "fix": "CloudTrail > Trails > Create trail > Trail name `org-trail` > check `Enable for all accounts in my organization` (from the management account) > Storage location = a new or existing S3 bucket > Next > Event type `Management events` > Next > Create trail"
+          },
+          "cli": {
+            "verify": [
+              "aws cloudtrail describe-trails \\\n  --query 'trailList[].{name:Name, multiRegion:IsMultiRegionTrail, org:IsOrganizationTrail, bucket:S3BucketName}' --output table",
+              "aws cloudtrail get-trail-status --name <trail> --query 'IsLogging'"
+            ],
+            "fix": [
+              "aws cloudtrail create-trail --name org-trail --s3-bucket-name <bucket> --is-multi-region-trail \\\n  --is-organization-trail",
+              "aws cloudtrail start-logging --name org-trail"
+            ],
+            "expect": "a trail with `multiRegion` = `True` exists and `IsLogging` is `true`. A single-region trail means activity in every other region is unrecorded, which is exactly where an attacker will operate."
+          }
+        },
+        {
+          "title": "CloudTrail Global Services Enabled",
+          "pass": "`IncludeGlobalServiceEvents` = `true`",
+          "console": {
+            "verify": "CloudTrail > Trails > <trail> > General details > `Multi-region trail` reads `Yes` (a multi-region trail always records global service events such as IAM, STS and CloudFront)",
+            "fix": "CloudTrail > Trails > <trail> > General details > Edit > enable the trail for all regions > Save changes"
+          },
+          "cli": {
+            "verify": [
+              "aws cloudtrail describe-trails --query 'trailList[].{name:Name, global:IncludeGlobalServiceEvents}' --output table"
+            ],
+            "fix": [
+              "aws cloudtrail update-trail --name <trail> --include-global-service-events"
+            ],
+            "expect": "`true` on your primary trail. Global service events cover IAM, STS and CloudFront - the control plane an attacker uses to establish persistence."
+          }
+        },
+        {
+          "title": "CloudTrail Log File Integrity Validation",
+          "pass": "`LogFileValidationEnabled` = `true`",
+          "console": {
+            "verify": "CloudTrail > Trails > <trail> > General details > `Log file validation` reads `Enabled`",
+            "fix": "CloudTrail > Trails > <trail> > General details > Edit > Additional settings > Log file validation `Enabled` > Save changes"
+          },
+          "cli": {
+            "verify": [
+              "aws cloudtrail describe-trails --query 'trailList[].{name:Name, validation:LogFileValidationEnabled}' --output table"
+            ],
+            "fix": [
+              "aws cloudtrail update-trail --name <trail> --enable-log-file-validation",
+              "aws cloudtrail validate-logs --trail-arn <arn> --start-time <time>"
+            ],
+            "expect": "`true` on every trail. Without it you cannot prove logs were not altered after the fact, which undermines the evidence in exactly the incident where it matters."
+          }
+        },
+        {
+          "title": "CloudTrail Integrated With CloudWatch",
+          "pass": "`CloudWatchLogsLogGroupArn` is set and delivery is recent",
+          "console": {
+            "verify": "CloudTrail > Trails > <trail> > CloudWatch Logs > `CloudWatch Logs` reads `Enabled` with a log group name, and `Last CloudWatch Logs delivery` shows a recent time with no delivery error",
+            "fix": "CloudTrail > Trails > <trail> > CloudWatch Logs > Edit > check `Enabled` > Log group = new or existing group > IAM role = new role > Save changes"
+          },
+          "cli": {
+            "verify": [
+              "aws cloudtrail describe-trails --query 'trailList[].{name:Name, logGroup:CloudWatchLogsLogGroupArn}' --output table",
+              "aws cloudtrail get-trail-status --name <trail> \\\n  --query '{lastDelivery:LatestCloudWatchLogsDeliveryTime, error:LatestCloudWatchLogsDeliveryError}'"
+            ],
+            "fix": [
+              "aws cloudtrail update-trail --name <trail> --cloud-watch-logs-log-group-arn <arn> \\\n  --cloud-watch-logs-role-arn <role-arn>"
+            ],
+            "expect": "`logGroup` is populated, `lastDelivery` is recent, and `error` is null. Without CloudWatch integration there is nothing for metric filters to match, so none of the alarm controls in this guide can function."
+          }
+        },
+        {
+          "title": "CloudTrail Management Events",
+          "pass": "management events are recorded for both read and write",
+          "console": {
+            "verify": "CloudTrail > Trails > <trail> > Management events > `API activity` reads `Read, Write`",
+            "fix": "CloudTrail > Trails > <trail> > Management events > Edit > check both `Read` and `Write` > Save changes"
+          },
+          "cli": {
+            "verify": [
+              "aws cloudtrail get-event-selectors --trail-name <trail> \\\n  --query '{selectors:EventSelectors, advanced:AdvancedEventSelectors}' --output json"
+            ],
+            "fix": [
+              "aws cloudtrail put-event-selectors --trail-name <trail> \\\n  --event-selectors '[{\"ReadWriteType\":\"All\",\"IncludeManagementEvents\":true}]'"
+            ],
+            "expect": "a selector with `IncludeManagementEvents` = `true` and `ReadWriteType` = `All`. `WriteOnly` omits the reconnaissance phase - the `Describe`, `List` and `Get` calls that show what an attacker looked at before acting."
+          }
+        },
+        {
+          "title": "RDS Publicly Accessible",
+          "pass": "`PubliclyAccessible` = `false` on every instance",
+          "console": {
+            "verify": "RDS > Databases > <instance> > Connectivity & security > Security > `Publicly accessible` reads `No`",
+            "fix": "RDS > Databases > select the instance > Modify > Connectivity > Additional configuration > `Not publicly accessible` > Continue > Apply immediately > Modify DB instance"
+          },
+          "cli": {
+            "verify": [
+              "aws rds describe-db-instances \\\n  --query 'DBInstances[].{id:DBInstanceIdentifier, public:PubliclyAccessible, endpoint:Endpoint.Address}' --output table"
+            ],
+            "fix": [
+              "aws rds modify-db-instance --db-instance-identifier <id> --no-publicly-accessible \\\n  --apply-immediately"
+            ],
+            "expect": "`public` is `False` everywhere. When true, the instance gets a publicly resolvable endpoint and is reachable from the internet subject only to its security group - one permissive rule from full exposure."
+          }
+        },
+        {
+          "title": "RDS Instance Not In Public Subnet",
+          "pass": "every DB subnet group contains only private subnets",
+          "console": {
+            "verify": "RDS > Databases > <instance> > Connectivity & security > Networking > note every ID under `Subnets`; then VPC > Subnets > each subnet > Route table > Routes > no `0.0.0.0/0` route with an `igw-` target",
+            "fix": "RDS > Subnet groups > Create DB subnet group > choose only private subnets > Create; then RDS > Databases > select the instance > Modify > Connectivity > DB subnet group = the new group > Continue > Modify DB instance"
+          },
+          "cli": {
+            "verify": [
+              "aws rds describe-db-instances \\\n  --query 'DBInstances[].{id:DBInstanceIdentifier, subnets:DBSubnetGroup.Subnets[].SubnetIdentifier}' --output json",
+              "aws ec2 describe-route-tables --filters Name=association.subnet-id,Values=<subnet> \\\n  --query 'RouteTables[].Routes[?GatewayId!=null].GatewayId'"
+            ],
+            "fix": [
+              "aws rds create-db-subnet-group --db-subnet-group-name <group> \\\n  --db-subnet-group-description \"private subnets\" --subnet-ids <private-subnet-ids>",
+              "aws rds modify-db-instance --db-instance-identifier <id> --db-subnet-group-name <group>"
+            ],
+            "expect": "the second command returns no `igw-` entry for any subnet listed by the first. A private subnet is the layer that holds when `PubliclyAccessible` is flipped by mistake."
+          }
+        },
+        {
+          "title": "Amazon RDS Public Snapshots",
+          "pass": "no manual snapshot is shared with `all`",
+          "console": {
+            "verify": "RDS > Snapshots > Manual > select each snapshot > Actions > Share snapshot > `DB snapshot visibility` reads `Private`",
+            "fix": "RDS > Snapshots > Manual > select the snapshot > Actions > Share snapshot > DB snapshot visibility `Private` > Save"
+          },
+          "cli": {
+            "verify": [
+              "aws rds describe-db-snapshots --snapshot-type manual --query 'DBSnapshots[].DBSnapshotIdentifier' --output text | tr '\\t' '\\n' | while read s; do\n  a=$(aws rds describe-db-snapshot-attributes --db-snapshot-identifier \"$s\" \\\n    --query \"DBSnapshotAttributesResult.DBSnapshotAttributes[?AttributeName=='restore'].AttributeValues\" --output text)\n  echo \"$s: ${a:-none}\"\ndone"
+            ],
+            "fix": [
+              "aws rds modify-db-snapshot-attribute --db-snapshot-identifier <snapshot> --attribute-name restore \\\n  --values-to-remove all"
+            ],
+            "expect": "no snapshot lists `all`. A public snapshot can be restored by anyone into their own account - it is a full copy of your database, and the exposure is silent."
+          }
+        },
+        {
+          "title": "IAM Database Authentication",
+          "pass": "`IAMDatabaseAuthenticationEnabled` = `true` on MySQL and PostgreSQL instances",
+          "console": {
+            "verify": "RDS > Databases > <instance> > Configuration > `IAM DB authentication` reads `Enabled`",
+            "fix": "RDS > Databases > select the instance > Modify > Database authentication > `Password and IAM database authentication` > Continue > Apply immediately > Modify DB instance"
+          },
+          "cli": {
+            "verify": [
+              "aws rds describe-db-instances \\\n  --query \"DBInstances[?Engine=='mysql' || Engine=='postgres'].{id:DBInstanceIdentifier, iamAuth:IAMDatabaseAuthenticationEnabled}\" \\\n  --output table"
+            ],
+            "fix": [
+              "aws rds modify-db-instance --db-instance-identifier <id> --enable-iam-database-authentication \\\n  --apply-immediately"
+            ],
+            "expect": "`iamAuth` is `True`. Otherwise access depends on database passwords that are shared, rarely rotated, and invisible to your IAM offboarding process."
+          }
+        },
+        {
+          "title": "Unrestricted DB Security Group",
+          "pass": "no DB security group allows `0.0.0.0/0`",
+          "console": {
+            "verify": "RDS > Databases > <instance> > Connectivity & security > Security > open each group under `VPC security groups` > Inbound rules > no rule with Source `0.0.0.0/0` or `::/0`",
+            "fix": "EC2 > Security Groups > select the group > Inbound rules > Edit inbound rules > Delete the `0.0.0.0/0` rule > Add rule > the database port > Source = the application tier's security group > Save rules"
+          },
+          "cli": {
+            "verify": [
+              "aws rds describe-db-instances \\\n  --query 'DBInstances[].{id:DBInstanceIdentifier, sgs:VpcSecurityGroups[].VpcSecurityGroupId}' --output json",
+              "aws ec2 describe-security-groups --group-ids <sg> \\\n  --query \"SecurityGroups[].IpPermissions[?IpRanges[?CidrIp=='0.0.0.0/0']]\""
+            ],
+            "fix": [
+              "aws ec2 revoke-security-group-ingress --group-id <sg> --protocol tcp --port <db-port> \\\n  --cidr 0.0.0.0/0",
+              "aws ec2 authorize-security-group-ingress --group-id <sg> --protocol tcp --port <db-port> \\\n  --source-group <app-sg>"
+            ],
+            "expect": "the second command returns an empty list for every group attached to a database (EC2-Classic `describe-db-security-groups` no longer applies to VPC instances - the VPC security group is the control). A database port open to the world is one leaked password from full disclosure."
+          }
+        },
+        {
+          "title": "RDS Auto Minor Version Upgrade",
+          "pass": "`AutoMinorVersionUpgrade` = `true`",
+          "console": {
+            "verify": "RDS > Databases > <instance> > Maintenance & backups > Maintenance > `Auto minor version upgrade` reads `Enabled`",
+            "fix": "RDS > Databases > select the instance > Modify > Maintenance > check `Enable auto minor version upgrade` > choose a maintenance window you can tolerate > Continue > Modify DB instance"
+          },
+          "cli": {
+            "verify": [
+              "aws rds describe-db-instances \\\n  --query 'DBInstances[].{id:DBInstanceIdentifier, autoUpgrade:AutoMinorVersionUpgrade, version:EngineVersion}' --output table"
+            ],
+            "fix": [
+              "aws rds modify-db-instance --db-instance-identifier <id> --auto-minor-version-upgrade \\\n  --apply-immediately"
+            ],
+            "expect": "`autoUpgrade` is `True` on every instance. Minor versions are where database CVE fixes ship; without this the instance stays vulnerable until someone schedules a manual upgrade."
+          }
+        },
+        {
+          "title": "RDS Master Username",
+          "pass": "no instance uses a default master username",
+          "console": {
+            "verify": "RDS > Databases > <instance> > Configuration > `Master username` is not `admin`, `root`, `postgres`, `sa` or `awsuser`",
+            "fix": "RDS > Databases > Create database > Settings > Credentials settings > `Master username` = an unguessable name > Create database; then migrate applications to the new instance and delete the old one (the master username cannot be changed in place)"
+          },
+          "cli": {
+            "verify": [
+              "aws rds describe-db-instances --query 'DBInstances[].{id:DBInstanceIdentifier, master:MasterUsername}' --output table"
+            ],
+            "fix": [
+              "aws rds create-db-instance --db-instance-identifier <new-id> --engine <engine> --db-instance-class <class> \\\n  --allocated-storage <gb> --master-username <unguessable-name> --manage-master-user-password \\\n  --db-subnet-group-name <group> --vpc-security-group-ids <sg> --no-publicly-accessible"
+            ],
+            "expect": "no instance uses `admin`, `root`, `postgres`, `sa` or `awsuser`. A predictable username halves the work of a credential-stuffing attempt."
+          }
+        },
+        {
+          "title": "Function Exposed",
+          "pass": "no resource policy allows a wildcard principal without a source condition",
+          "console": {
+            "verify": "Lambda > Functions > <fn> > Configuration > Permissions > Resource-based policy statements > no statement with Principal `*` lacks a `Source ARN` or `Source account` condition",
+            "fix": "Lambda > Functions > <fn> > Configuration > Permissions > Resource-based policy statements > select the statement > Delete > Delete; then Add permissions > AWS service > choose the service > set `Source ARN` > Save"
+          },
+          "cli": {
+            "verify": [
+              "aws lambda list-functions --query 'Functions[].FunctionName' --output text | tr '\\t' '\\n' | while read f; do\n  p=$(aws lambda get-policy --function-name \"$f\" --query Policy --output text 2>/dev/null)\n  echo \"$p\" | grep -q '\"\\*\"' && echo \"wildcard principal: $f\"\ndone"
+            ],
+            "fix": [
+              "aws lambda remove-permission --function-name <fn> --statement-id <sid>",
+              "aws lambda add-permission --function-name <fn> --statement-id <sid> --action lambda:InvokeFunction \\\n  --principal <service> --source-arn <arn>"
+            ],
+            "expect": "no output, or every wildcard is paired with a `Condition` on `AWS:SourceArn` or `AWS:SourceAccount`. An unconditioned wildcard lets any AWS principal invoke the function."
+          }
+        },
+        {
+          "title": "Lambda Function With Admin Privileges",
+          "pass": "no execution role holds AdministratorAccess or a wildcard policy",
+          "console": {
+            "verify": "Lambda > Functions > <fn> > Configuration > Permissions > Execution role > open the role link > IAM > Roles > <role> > Permissions > Permissions policies > no `AdministratorAccess` and no inline policy allowing `\"Action\": \"*\"` on `\"Resource\": \"*\"`",
+            "fix": "IAM > Roles > <role> > Permissions > Permissions policies > select AdministratorAccess > Remove > Remove; then Add permissions > Create inline policy > JSON > only the APIs the handler calls > Next > Create policy"
+          },
+          "cli": {
+            "verify": [
+              "aws lambda list-functions --query 'Functions[].{fn:FunctionName, role:Role}' --output text | while read fn role; do\n  r=${role##*/}\n  p=$(aws iam list-attached-role-policies --role-name \"$r\" \\\n    --query \"AttachedPolicies[?PolicyName=='AdministratorAccess'].PolicyName\" --output text)\n  [ -n \"$p\" ] && echo \"$fn ($r)\"\ndone"
+            ],
+            "fix": [
+              "aws iam detach-role-policy --role-name <role> \\\n  --policy-arn arn:aws:iam::aws:policy/AdministratorAccess"
+            ],
+            "expect": "no output. A function's role is available to any code in that function, including a compromised dependency - admin on the role is admin for the whole supply chain."
+          }
+        },
+        {
+          "title": "Lambda Functions Should not Share Roles that Contain Admin Privileges",
+          "pass": "no execution role is shared across functions",
+          "console": {
+            "verify": "Lambda > Functions > <fn> > Configuration > Permissions > Execution role > the `Role name` is unique to this function (no other function's Permissions page lists the same role)",
+            "fix": "IAM > Roles > Create role > Trusted entity type `AWS service` > Use case `Lambda` > Next > attach a policy scoped to this function > Next > Role name `<fn>-role` > Create role; then Lambda > Functions > <fn> > Configuration > Permissions > Execution role > Edit > `Use an existing role` > the new role > Save"
+          },
+          "cli": {
+            "verify": [
+              "aws lambda list-functions --query 'Functions[].Role' --output text | tr '\\t' '\\n' | sort | uniq -c | sort -rn | awk '$1 > 1'"
+            ],
+            "fix": [
+              "aws iam create-role --role-name <fn>-role --assume-role-policy-document file://lambda-trust.json",
+              "aws lambda update-function-configuration --function-name <fn> --role <new-role-arn>"
+            ],
+            "expect": "no output. A shared role means the least-trusted function determines the blast radius of every function sharing it, and least privilege becomes impossible to express."
+          }
+        },
+        {
+          "title": "Lambda Cross Account Access",
+          "pass": "every external account in a function policy is known and approved",
+          "console": {
+            "verify": "Lambda > Functions > <fn> > Configuration > Permissions > Resource-based policy statements > every principal account ID is your own or a documented partner",
+            "fix": "Lambda > Functions > <fn> > Configuration > Permissions > Resource-based policy statements > select the stale statement > Delete > Delete"
+          },
+          "cli": {
+            "verify": [
+              "aws lambda list-functions --query 'Functions[].FunctionName' --output text | tr '\\t' '\\n' | while read f; do\n  p=$(aws lambda get-policy --function-name \"$f\" --query Policy --output text 2>/dev/null)\n  [ -n \"$p\" ] && echo \"$p\" | grep -oE '[0-9]{12}' | sort -u | sed \"s|^|$f: |\"\ndone"
+            ],
+            "fix": [
+              "aws lambda remove-permission --function-name <fn> --statement-id <sid>"
+            ],
+            "expect": "every account ID is your own or a documented partner. Cross-account invoke rights persist long after the integration that needed them."
+          }
+        },
+        {
+          "title": "Enable IAM Authentication for Lambda Function URLs",
+          "pass": "no function URL uses `AuthType` `NONE`",
+          "console": {
+            "verify": "Lambda > Functions > <fn> > Configuration > Function URL > `Auth type` reads `AWS_IAM` (or no function URL is configured)",
+            "fix": "Lambda > Functions > <fn> > Configuration > Function URL > Edit > Auth type `AWS_IAM` > Save (or Delete > Delete to remove the URL and route through API Gateway with a WAF)"
+          },
+          "cli": {
+            "verify": [
+              "aws lambda list-functions --query 'Functions[].FunctionName' --output text | tr '\\t' '\\n' | while read f; do\n  aws lambda list-function-url-configs --function-name \"$f\" \\\n    --query \"FunctionUrlConfigs[].{fn:'$f', auth:AuthType}\" --output text 2>/dev/null\ndone",
+              "aws lambda list-function-url-configs --function-name <fn> \\\n  --query 'FunctionUrlConfigs[].{url:FunctionUrl, auth:AuthType}' --output table"
+            ],
+            "fix": [
+              "aws lambda update-function-url-config --function-name <fn> --auth-type AWS_IAM",
+              "aws lambda delete-function-url-config --function-name <fn>"
+            ],
+            "expect": "no row shows `NONE`. `AuthType: NONE` publishes an unauthenticated HTTPS endpoint straight to the internet, with no WAF and no API Gateway in front of it."
+          }
+        },
+        {
+          "title": "Lambda Using Supported Runtime Environment",
+          "pass": "no function runs a deprecated runtime",
+          "console": {
+            "verify": "Lambda > Functions > <fn> > Code > Runtime settings > `Runtime` is on the current AWS supported list and no deprecation banner is shown at the top of the function page",
+            "fix": "Lambda > Functions > <fn> > Code > Runtime settings > Edit > Runtime = a supported version > Save; then redeploy the code after testing for breaking language changes"
+          },
+          "cli": {
+            "verify": [
+              "aws lambda list-functions --query 'Functions[].{fn:FunctionName, runtime:Runtime}' --output table | sort -k2"
+            ],
+            "fix": [
+              "aws lambda update-function-configuration --function-name <fn> --runtime <supported-runtime>"
+            ],
+            "expect": "every runtime is on the current AWS supported list. A deprecated runtime stops receiving security patches, and AWS eventually blocks updates to the function entirely."
+          }
+        },
+        {
+          "title": "VPC Access for AWS Lambda Functions",
+          "pass": "functions reaching private resources have a `VpcConfig`",
+          "console": {
+            "verify": "Lambda > Functions > <fn> > Configuration > VPC > `VPC` shows a VPC ID with private subnets and a security group for every function that touches a database, cache or internal service",
+            "fix": "Lambda > Functions > <fn> > Configuration > VPC > Edit > VPC = the workload VPC > Subnets = private subnets > Security groups = the function's group > Save"
+          },
+          "cli": {
+            "verify": [
+              "aws lambda list-functions \\\n  --query 'Functions[].{fn:FunctionName, vpc:VpcConfig.VpcId, subnets:length(VpcConfig.SubnetIds || [])}' --output table"
+            ],
+            "fix": [
+              "aws lambda update-function-configuration --function-name <fn> \\\n  --vpc-config SubnetIds=<subnet-ids>,SecurityGroupIds=<sg-ids>"
+            ],
+            "expect": "every function that touches a database, cache or internal service has a `vpc` set. A function outside a VPC reaches those resources only if they are publicly exposed - so a null here often means something else is open."
+          }
+        },
+        {
+          "title": "Key Exposed",
+          "pass": "no key policy allows a wildcard principal without a condition",
+          "console": {
+            "verify": "KMS > Customer managed keys > <key> > Key policy > Switch to policy view > no statement with `\"AWS\": \"*\"` lacks a `Condition` on `kms:CallerAccount` or `aws:PrincipalOrgID`",
+            "fix": "KMS > Customer managed keys > <key> > Key policy > Switch to policy view > Edit > replace the wildcard principal with the role ARNs that need `Encrypt`, `Decrypt` or `GenerateDataKey` > Save changes"
+          },
+          "cli": {
+            "verify": [
+              "aws kms list-keys --query 'Keys[].KeyId' --output text | tr '\\t' '\\n' | while read k; do\n  m=$(aws kms describe-key --key-id \"$k\" --query 'KeyMetadata.KeyManager' --output text)\n  [ \"$m\" = \"CUSTOMER\" ] || continue\n  aws kms get-key-policy --key-id \"$k\" --policy-name default --query Policy --output text | \\\n    grep -q '\"AWS\": \"\\*\"' && echo \"wildcard: $k\"\ndone"
+            ],
+            "fix": [
+              "aws kms put-key-policy --key-id <key> --policy-name default --policy file://policy.json"
+            ],
+            "expect": "no output, or every wildcard principal is constrained by a `Condition` on `kms:CallerAccount` or `aws:PrincipalOrgID`. An open key policy makes the encryption decorative - anyone who can reach the ciphertext can also call `Decrypt`."
+          }
+        },
+        {
+          "title": "KMS Cross Account Access",
+          "pass": "every external account in a key policy is known and approved",
+          "console": {
+            "verify": "KMS > Customer managed keys > <key> > Other AWS accounts > every listed account ID is a documented partner, and Key policy > every principal ARN belongs to your own account or a documented partner",
+            "fix": "KMS > Customer managed keys > <key> > Other AWS accounts > Change other AWS accounts > Remove next to the stale account > Save changes"
+          },
+          "cli": {
+            "verify": [
+              "aws kms list-keys --query 'Keys[].KeyId' --output text | tr '\\t' '\\n' | while read k; do\n  aws kms get-key-policy --key-id \"$k\" --policy-name default --query Policy --output text 2>/dev/null | \\\n    grep -oE 'arn:aws:iam::[0-9]{12}' | sort -u | sed \"s|^|$k: |\"\ndone",
+              "aws kms list-grants --key-id <key> --query 'Grants[].[GranteePrincipal,Operations]' --output table"
+            ],
+            "fix": [
+              "aws kms put-key-policy --key-id <key> --policy-name default --policy file://policy.json",
+              "aws kms revoke-grant --key-id <key> --grant-id <id>"
+            ],
+            "expect": "every account ID is your own or a documented partner, and every grant names a principal you recognise (grants do not appear in the policy). Cross-account decrypt rights are equivalent to handing over the data the key protects."
+          }
+        },
+        {
+          "title": "EKS Cluster Endpoint Public Access",
+          "pass": "`endpointPublicAccess` = `false`, or restricted by CIDR",
+          "console": {
+            "verify": "EKS > Clusters > <cluster> > Networking > `API server endpoint access` reads `Private`, or `Public and private` with a `Public access source allowlist` that does not contain `0.0.0.0/0`",
+            "fix": "EKS > Clusters > <cluster> > Networking > Manage endpoint access > `Private` (or `Public and private` with Advanced settings > allowlist = office, VPN and CI egress CIDRs) > Save changes"
+          },
+          "cli": {
+            "verify": [
+              "aws eks list-clusters --query 'clusters' --output text | tr '\\t' '\\n' | while read c; do\n  aws eks describe-cluster --name \"$c\" \\\n    --query \"cluster.{name:name, public:resourcesVpcConfig.endpointPublicAccess, private:resourcesVpcConfig.endpointPrivateAccess, cidrs:resourcesVpcConfig.publicAccessCidrs}\" \\\n    --output json\ndone"
+            ],
+            "fix": [
+              "aws eks update-cluster-config --name <cluster> \\\n  --resources-vpc-config endpointPublicAccess=false,endpointPrivateAccess=true",
+              "aws eks update-cluster-config --name <cluster> \\\n  --resources-vpc-config endpointPublicAccess=true,endpointPrivateAccess=true,publicAccessCidrs=<office-cidr>,<vpn-cidr>,<ci-egress-ip>/32"
+            ],
+            "expect": "`public` is `false`, or `true` with `cidrs` containing no `0.0.0.0/0`. A public API server with the default CIDR accepts authentication attempts from anywhere."
+          }
+        },
+        {
+          "title": "Ensure EKS Clusters Have Private Endpoint Enabled and Public Access Disabled",
+          "pass": "`endpointPrivateAccess` = `true` and `endpointPublicAccess` = `false`",
+          "console": {
+            "verify": "EKS > Clusters > <cluster> > Networking > `API server endpoint access` reads `Private`",
+            "fix": "EKS > Clusters > <cluster> > Networking > Manage endpoint access > `Private` > Save changes (confirm your CI has a network path into the VPC first)"
+          },
+          "cli": {
+            "verify": [
+              "aws eks list-clusters --query 'clusters' --output text | tr '\\t' '\\n' | while read c; do\n  echo \"$c: $(aws eks describe-cluster --name \"$c\" --query 'cluster.resourcesVpcConfig.[endpointPrivateAccess,endpointPublicAccess]' --output text)\"\ndone"
+            ],
+            "fix": [
+              "aws eks update-cluster-config --name <cluster> \\\n  --resources-vpc-config endpointPrivateAccess=true,endpointPublicAccess=false"
+            ],
+            "expect": "`True False` for every production cluster. Private-only access means the API server is reachable solely from inside the VPC or over a connected network."
+          }
+        },
+        {
+          "title": "Ensure EKS Clusters Are Created with Private Nodes",
+          "pass": "node group subnets have no route to an internet gateway",
+          "console": {
+            "verify": "EKS > Clusters > <cluster> > Compute > Node groups > <group> > Details > note every ID under `Subnets`; then VPC > Subnets > each subnet > Route table > Routes > no `0.0.0.0/0` route with an `igw-` target",
+            "fix": "EKS > Clusters > <cluster> > Compute > Add node group > Node group configuration > Next > Node group network configuration > Subnets = private subnets only > Next > Create; then drain the old group and EKS > Clusters > <cluster> > Compute > Node groups > select the old group > Delete > type its name > Delete"
+          },
+          "cli": {
+            "verify": [
+              "aws eks list-clusters --query 'clusters' --output text | tr '\\t' '\\n' | while read c; do\n  for g in $(aws eks list-nodegroups --cluster-name \"$c\" --query 'nodegroups' --output text); do\n    echo \"== $c/$g\"\n    aws eks describe-nodegroup --cluster-name \"$c\" --nodegroup-name \"$g\" --query 'nodegroup.subnets' --output text\n  done\ndone",
+              "aws ec2 describe-route-tables --filters Name=association.subnet-id,Values=<subnet> \\\n  --query 'RouteTables[].Routes[].[DestinationCidrBlock,GatewayId]' --output table"
+            ],
+            "fix": [
+              "aws eks create-nodegroup --cluster-name <cluster> --nodegroup-name <new-group> \\\n  --subnets <private-subnet-ids> --node-role <node-role-arn>",
+              "aws eks delete-nodegroup --cluster-name <cluster> --nodegroup-name <old-group>"
+            ],
+            "expect": "for every subnet the first command lists, the second command shows no `0.0.0.0/0` route paired with an `igw-` gateway. Nodes with public addresses expose the kubelet and every hostNetwork pod."
+          }
+        },
+        {
+          "title": "Disable Remote Access to EKS Cluster Node Groups",
+          "pass": "no node group has a `remoteAccess` SSH key configured",
+          "console": {
+            "verify": "EKS > Clusters > <cluster> > Compute > Node groups > <group> > Details > Node group configuration > `SSH key pair` shows no key",
+            "fix": "EKS > Clusters > <cluster> > Compute > Add node group > Node group configuration > Next > Node group network configuration > leave `Configure remote access to nodes` off > Next > Create; then drain the old group and EKS > Clusters > <cluster> > Compute > Node groups > select the old group > Delete > type its name > Delete"
+          },
+          "cli": {
+            "verify": [
+              "aws eks list-clusters --query 'clusters' --output text | tr '\\t' '\\n' | while read c; do\n  for g in $(aws eks list-nodegroups --cluster-name \"$c\" --query 'nodegroups' --output text); do\n    echo \"$c/$g: $(aws eks describe-nodegroup --cluster-name \"$c\" --nodegroup-name \"$g\" --query 'nodegroup.remoteAccess' --output json | tr -d '\\n')\"\n  done\ndone"
+            ],
+            "fix": [
+              "aws eks create-nodegroup --cluster-name <cluster> --nodegroup-name <new-group> \\\n  --subnets <private-subnet-ids> --node-role <node-role-arn>",
+              "aws eks delete-nodegroup --cluster-name <cluster> --nodegroup-name <old-group>"
+            ],
+            "expect": "`remoteAccess` is `null` for every node group. A configured SSH key is a standing path onto the node that bypasses Kubernetes authorization entirely; use SSM Session Manager for the rare cases where node access is genuinely needed."
+          }
+        },
+        {
+          "title": "Enable Envelope Encryption for EKS Kubernetes Secrets",
+          "pass": "an `encryptionConfig` with a KMS key covering `secrets`",
+          "console": {
+            "verify": "EKS > Clusters > <cluster> > Overview > `Secrets encryption` reads `Enabled` with a customer-managed KMS key ARN",
+            "fix": "EKS > Clusters > <cluster> > Overview > Secrets encryption > Enable > KMS key = a customer-managed key > Enable (this is one-way and cannot be removed afterwards)"
+          },
+          "cli": {
+            "verify": [
+              "aws eks list-clusters --query 'clusters' --output text | tr '\\t' '\\n' | while read c; do\n  echo \"$c: $(aws eks describe-cluster --name \"$c\" --query 'cluster.encryptionConfig' --output json | tr -d '\\n')\"\ndone"
+            ],
+            "fix": [
+              "aws eks associate-encryption-config --cluster-name <cluster> \\\n  --encryption-config '[{\"resources\":[\"secrets\"],\"provider\":{\"keyArn\":\"<kms-key-arn>\"}}]'"
+            ],
+            "expect": "each cluster returns a config with `resources: [\"secrets\"]` and a customer-managed KMS key ARN. Without it, Kubernetes secrets sit in etcd protected only by platform keys you cannot rotate or revoke."
+          }
+        },
+        {
+          "title": "Enable Support for Network Policies",
+          "pass": "a network policy engine is installed and default-deny policies exist",
+          "console": {
+            "verify": "EKS > Clusters > <cluster> > Add-ons > `Amazon VPC CNI` > Configuration values contain `\"enableNetworkPolicy\": \"true\"` (or a Calico/Cilium add-on is installed), and EKS > Clusters > <cluster> > Resources > Policy > NetworkPolicies > a default-deny policy is listed in every namespace",
+            "fix": "EKS > Clusters > <cluster> > Add-ons > Amazon VPC CNI > Edit > Optional configuration settings > Configuration values `{\"enableNetworkPolicy\":\"true\"}` > Save changes; then apply a default-deny `NetworkPolicy` per namespace and allow-list the flows you need"
+          },
+          "cli": {
+            "verify": [
+              "aws eks list-clusters --query 'clusters' --output text | tr '\\t' '\\n' | while read c; do\n  echo \"== $c\"\n  aws eks list-addons --cluster-name \"$c\" --query 'addons' --output text\ndone",
+              "kubectl get networkpolicy --all-namespaces"
+            ],
+            "fix": [
+              "aws eks update-addon --cluster-name <cluster> --addon-name vpc-cni \\\n  --configuration-values '{\"enableNetworkPolicy\":\"true\"}'",
+              "kubectl apply -n <namespace> -f default-deny.yaml"
+            ],
+            "expect": "the VPC CNI addon has network policy enabled (or Calico/Cilium is installed) and each namespace has a default-deny policy. An engine with no policies enforces nothing - every pod still reaches every other pod."
+          }
+        },
+        {
+          "title": "Kubernetes Cluster Logging",
+          "pass": "all five control plane log types are enabled",
+          "console": {
+            "verify": "EKS > Clusters > <cluster> > Observability > Control plane logs > `API server`, `Audit`, `Authenticator`, `Controller manager` and `Scheduler` all read `On`",
+            "fix": "EKS > Clusters > <cluster> > Observability > Control plane logs > Manage logging > turn on all five log types > Save changes"
+          },
+          "cli": {
+            "verify": [
+              "aws eks list-clusters --query 'clusters' --output text | tr '\\t' '\\n' | while read c; do\n  echo \"$c: $(aws eks describe-cluster --name \"$c\" --query 'cluster.logging.clusterLogging' --output json | tr -d '\\n')\"\ndone"
+            ],
+            "fix": [
+              "aws eks update-cluster-config --name <cluster> \\\n  --logging '{\"clusterLogging\":[{\"types\":[\"api\",\"audit\",\"authenticator\",\"controllerManager\",\"scheduler\"],\"enabled\":true}]}'"
+            ],
+            "expect": "`api`, `audit`, `authenticator`, `controllerManager` and `scheduler` all appear with `enabled: true`. The `audit` log in particular is the only record of who called the Kubernetes API."
+          }
+        },
+        {
+          "title": "Kubernetes Cluster Version",
+          "pass": "every cluster runs a version still in standard support",
+          "console": {
+            "verify": "EKS > Clusters > <cluster> > Overview > `Kubernetes version` is within the AWS standard support window and no extended-support notice is shown",
+            "fix": "EKS > Clusters > <cluster> > Overview > Upgrade version > select the next minor version > Update; then update node groups and add-ons to match"
+          },
+          "cli": {
+            "verify": [
+              "aws eks list-clusters --query 'clusters' --output text | tr '\\t' '\\n' | while read c; do\n  echo \"$c: $(aws eks describe-cluster --name \"$c\" --query 'cluster.version' --output text)\"\ndone"
+            ],
+            "fix": [
+              "aws eks update-cluster-version --name <cluster> --kubernetes-version <version>"
+            ],
+            "expect": "each version is within the AWS standard support window. Extended support costs more and ends; past that, the control plane stops receiving security patches."
+          }
+        },
+        {
+          "title": "Use OIDC Provider for Authenticating Kubernetes API Calls",
+          "pass": "an IAM OIDC provider exists for the cluster issuer",
+          "console": {
+            "verify": "EKS > Clusters > <cluster> > Overview > note the `OpenID Connect provider URL`; then IAM > Identity providers > a provider of type `OpenID Connect` whose URL matches that issuer is listed",
+            "fix": "IAM > Identity providers > Add provider > `OpenID Connect` > Provider URL = the cluster's OpenID Connect provider URL > Audience `sts.amazonaws.com` > Add provider; then move workloads to IRSA or EKS Pod Identity"
+          },
+          "cli": {
+            "verify": [
+              "aws eks list-clusters --query 'clusters' --output text | tr '\\t' '\\n' | while read c; do\n  iss=$(aws eks describe-cluster --name \"$c\" --query 'cluster.identity.oidc.issuer' --output text)\n  echo \"$c: $iss\"\ndone",
+              "aws iam list-open-id-connect-providers"
+            ],
+            "fix": [
+              "eksctl utils associate-iam-oidc-provider --cluster <cluster> --approve",
+              "aws iam create-open-id-connect-provider --url <issuer> --client-id-list sts.amazonaws.com"
+            ],
+            "expect": "each cluster's issuer URL has a matching IAM OIDC provider. Without it, pods cannot use IAM roles for service accounts and fall back to the node instance role - every pod on the node inherits the same permissions."
+          }
+        },
+        {
+          "title": "AWS Secrets Manager in Use for RDS Instances",
+          "pass": "every RDS master credential is stored in Secrets Manager",
+          "console": {
+            "verify": "RDS > Databases > <instance> > Configuration > `Master credentials ARN` shows a Secrets Manager secret (or Secrets Manager > Secrets lists a documented secret for that database)",
+            "fix": "RDS > Databases > select the instance > Modify > Settings > Credentials management > check `Manage master credentials in AWS Secrets Manager` > Continue > Apply immediately > Modify DB instance"
+          },
+          "cli": {
+            "verify": [
+              "aws secretsmanager list-secrets \\\n  --query 'SecretList[].{name:Name, rotation:RotationEnabled, lastRotated:LastRotatedDate}' --output table",
+              "aws rds describe-db-instances \\\n  --query 'DBInstances[].{id:DBInstanceIdentifier, managedSecret:MasterUserSecret.SecretArn}' --output table"
+            ],
+            "fix": [
+              "aws rds modify-db-instance --db-instance-identifier <id> --manage-master-user-password \\\n  --apply-immediately"
+            ],
+            "expect": "every database has a corresponding secret - either a managed `MasterUserSecret` or a documented Secrets Manager entry. Credentials outside it usually live in application config, CI variables or a shared password manager where rotation never happens."
+          }
+        },
+        {
+          "title": "Secret Rotation Enabled",
+          "pass": "`RotationEnabled` = `true` on every secret",
+          "console": {
+            "verify": "Secrets Manager > Secrets > <secret> > Rotation configuration > `Rotation status` reads `Enabled` with a schedule",
+            "fix": "Secrets Manager > Secrets > <secret> > Rotation configuration > Edit rotation > turn on `Automatic rotation` > Rotation schedule every 30 days > Rotation function = the rotation Lambda > Save"
+          },
+          "cli": {
+            "verify": [
+              "aws secretsmanager list-secrets \\\n  --query \"SecretList[?!RotationEnabled].{name:Name, created:CreatedDate}\" --output table"
+            ],
+            "fix": [
+              "aws secretsmanager rotate-secret --secret-id <secret> --rotation-lambda-arn <arn> \\\n  --rotation-rules AutomaticallyAfterDays=30"
+            ],
+            "expect": "no rows. A secret that never rotates has the same value it had the day someone copied it into a notebook, and a leak stays exploitable indefinitely."
+          }
+        }
       ]
     },
     {
