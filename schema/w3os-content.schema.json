@@ -4,46 +4,71 @@
   "title": "W3OS Content",
   "description": "Full shape of the data the Sentry sync engine reads from this repository. Use this schema to understand what each markdown file must produce, and to validate a generated manifest before merge.",
   "type": "object",
-  "required": ["domains", "guides"],
+  "required": [
+    "domains",
+    "guides"
+  ],
   "additionalProperties": false,
   "properties": {
     "domains": {
       "type": "array",
       "description": "Security domains. Each domain maps to a requirements markdown file at requirements/{id}-{slug}.md",
       "minItems": 1,
-      "items": { "$ref": "#/$defs/domain" }
+      "items": {
+        "$ref": "#/$defs/domain"
+      }
     },
     "guides": {
       "type": "array",
       "description": "All guide markdown files found under guides/. Each file must contain a valid HTML comment metadata block.",
       "minItems": 1,
-      "items": { "$ref": "#/$defs/guide" }
+      "items": {
+        "$ref": "#/$defs/guide"
+      }
     }
   },
-
   "$defs": {
     "domain": {
       "type": "object",
-      "required": ["id", "name", "slug", "order", "requirements"],
+      "required": [
+        "id",
+        "name",
+        "slug",
+        "order",
+        "requirements"
+      ],
       "additionalProperties": false,
       "properties": {
         "id": {
           "type": "string",
           "pattern": "^0[1-9]|[1-9][0-9]$",
           "description": "Two-digit numeric domain ID matching the filename prefix (e.g. '01').",
-          "examples": ["01", "02", "03", "04", "05"]
+          "examples": [
+            "01",
+            "02",
+            "03",
+            "04",
+            "05"
+          ]
         },
         "name": {
           "type": "string",
           "minLength": 1,
           "description": "Human-readable domain name.",
-          "examples": ["Wallet & Multi-Sig Management", "Endpoint Security"]
+          "examples": [
+            "Wallet & Multi-Sig Management",
+            "Endpoint Security"
+          ]
         },
         "slug": {
           "type": "string",
           "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]$",
           "description": "URL-safe slug. Combined with id to form the requirements filename: {id}-{slug}.md",
-          "examples": ["wallet-multisig", "endpoints", "communications-socials"]
+          "examples": [
+            "wallet-multisig",
+            "endpoints",
+            "communications-socials"
+          ]
         },
         "description": {
           "type": "string",
@@ -58,21 +83,31 @@
           "type": "array",
           "description": "Security requirements parsed from requirements/{id}-{slug}.md",
           "minItems": 1,
-          "items": { "$ref": "#/$defs/requirement" }
+          "items": {
+            "$ref": "#/$defs/requirement"
+          }
         }
       }
     },
-
     "requirement": {
       "type": "object",
-      "required": ["requirementId", "title", "section", "controlPoints", "order"],
+      "required": [
+        "requirementId",
+        "title",
+        "section",
+        "controlPoints",
+        "order"
+      ],
       "additionalProperties": false,
       "properties": {
         "requirementId": {
           "type": "string",
           "pattern": "^SP-[A-Z]+-\\d{3}$",
           "description": "Requirement identifier. Format: SP-{DOMAIN_CODE}-{NNN}. Must be unique within a domain.",
-          "examples": ["SP-WM-001", "SP-EP-012"]
+          "examples": [
+            "SP-WM-001",
+            "SP-EP-012"
+          ]
         },
         "title": {
           "type": "string",
@@ -99,10 +134,17 @@
         }
       }
     },
-
     "guide": {
       "type": "object",
-      "required": ["w3osId", "type", "title", "description", "category", "scope", "checklistItems"],
+      "required": [
+        "w3osId",
+        "type",
+        "title",
+        "description",
+        "category",
+        "scope",
+        "checklistItems"
+      ],
       "additionalProperties": false,
       "properties": {
         "w3osId": {
@@ -112,7 +154,10 @@
         },
         "type": {
           "type": "string",
-          "enum": ["CONFIGURATION", "GUIDE"]
+          "enum": [
+            "CONFIGURATION",
+            "GUIDE"
+          ]
         },
         "title": {
           "type": "string",
@@ -131,7 +176,10 @@
         },
         "scope": {
           "type": "string",
-          "enum": ["INDIVIDUAL", "ORGANIZATION"]
+          "enum": [
+            "INDIVIDUAL",
+            "ORGANIZATION"
+          ]
         },
         "checklistItems": {
           "type": "array",
@@ -141,6 +189,103 @@
             "type": "string",
             "minLength": 1
           }
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Repository path of the markdown file, relative to the repo root."
+        },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/checklistItem"
+          },
+          "description": "Structured checklist items, present only for guides written in the channel-first format (schema/guide-format.md). Same order and titles as checklistItems."
+        }
+      }
+    },
+    "command": {
+      "type": "string",
+      "minLength": 1,
+      "description": "A shell command exactly as the reader should run it. Multi-line commands keep their newlines."
+    },
+    "consoleChannel": {
+      "type": "object",
+      "required": [
+        "verify",
+        "fix"
+      ],
+      "additionalProperties": false,
+      "description": "How to check and fix the control through the provider's web console.",
+      "properties": {
+        "verify": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Full click path from the console's top-level navigation, segments separated by ' > ', ending with what to read and the passing value."
+        },
+        "fix": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Full click path ending with the action that remediates the control."
+        }
+      }
+    },
+    "cliChannel": {
+      "type": "object",
+      "required": [
+        "verify",
+        "expect"
+      ],
+      "additionalProperties": false,
+      "description": "How to check and fix the control from the command line.",
+      "properties": {
+        "verify": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/command"
+          },
+          "description": "Commands that collect the current state, in order."
+        },
+        "expect": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The output that means the control passes, followed by one clause on why the failing state matters."
+        },
+        "fix": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/command"
+          },
+          "description": "Commands that remediate the control. Absent when the fix is console-only."
+        }
+      }
+    },
+    "checklistItem": {
+      "type": "object",
+      "required": [
+        "title"
+      ],
+      "additionalProperties": false,
+      "description": "One checklist item parsed per schema/guide-format.md. `title` is the stable identity the sync engine keys progress on; the channels are instructions.",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Bold title from the `- [ ]` line, unchanged."
+        },
+        "pass": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The condition after `- pass:` on the item line."
+        },
+        "console": {
+          "$ref": "#/$defs/consoleChannel"
+        },
+        "cli": {
+          "$ref": "#/$defs/cliChannel"
         }
       }
     }

@@ -29,6 +29,8 @@ Join the [Telegram group](https://t.me/+yhmMnY2DyNBmNDlh) to collaborate with th
 
 ## Style Guidelines
 
+- Configuration guide checklist items follow the channel-first format described in [schema/guide-format.md](schema/guide-format.md): a pass condition on the item line, then Console and CLI blocks with Verify, Expect and Fix lines. `node scripts/validate.js` enforces it and `node scripts/build-manifest.js` regenerates `manifest.json`, which must be committed with your change.
+
 - Keep language simple and concise.
 - Use **must** for strict requirements, **should** for strong recommendations, and **can** for optional suggestions.
 - Be specific. Avoid vague instructions like “Monitor network traffic.” Instead, give actionable steps such as “Use Little Snitch on endpoints to monitor connection requests and block unknown domains by default.”
