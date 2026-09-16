@@ -31,6 +31,8 @@ The various security guides are available to help you implement the required sec
 
 There are account configuration guides for many popular services and software - each provides you with a concrete checklist for securely configuring both admin and user accounts.
 
+The configuration guides are kept current by an automated verification pipeline: an agent logs into each service with a dedicated test account, checks every checklist item against the live settings UI, and opens a pull request with fixes for anything that drifted. See [automation/README.md](automation/README.md) for how it works and how to add a service.
+
 ## Why W3OS?
 
 Unlike other frameworks, W3OS is focused entirely on **operational security maturity** — a complement to code audits that directly and exhaustively addresses security risks crucial to business continuity, user safety, and peace of mind for stakeholders.
@@ -41,6 +43,21 @@ Web3 organizations face unique operational security challenges that traditional 
 - **Rapid Development Cycles**: Balancing security with the fast-paced nature of Web3 development
 
 W3OS is designed to be straightforward and actionable with meaningful impact, not like a corporate compliance policy. It is structured like a checklist, allowing you to effectively identify weak areas in your OpSec and keep track of filling those gaps
+
+---
+
+## Real Incidents, Mapped to W3OS Controls
+
+Nearly every major Web3 loss since 2022 was an *operational* failure, not a code bug. Each of these would have been prevented or contained by specific W3OS controls:
+
+| Incident | Loss | Operational failure | W3OS controls |
+|---|---|---|---|
+| Bybit (2025) | ~$1.46B | Compromised multisig UI served malicious payload; signers blind-signed a delegatecall | SP-WM-009, SP-WM-010, SP-WM-017, SP-WM-018 + [Transaction Verification guide](guides/transaction-verification.md) |
+| Ronin Bridge (2022) | ~$624M | Validator quorum concentrated under one operator; spear-phishing | SP-WM-007, SP-GS-006 |
+| WazirX (2024) | ~$235M | Multisig transaction payload manipulated; signature collection abused | SP-WM-009, SP-WM-018 |
+| Munchables (2024) | $62.5M (recovered) | DPRK operative hired as developer with key access | SP-GS-017, SP-GS-023 + [Hiring Security guide](guides/hiring-security.md) |
+| Radiant Capital (2024) | ~$50M | Malware on signer devices; UI displayed benign transactions | SP-EP-006, SP-WM-015, SP-WM-010 |
+| Curve Finance DNS (2022) | ~$570K | DNS hijack served a wallet-drainer frontend | SP-DI-020, SP-DI-021, SP-DI-022 |
 
 ---
 
