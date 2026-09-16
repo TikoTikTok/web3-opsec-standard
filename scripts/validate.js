@@ -10,6 +10,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { parseGuideItems } = require('./lib/w3os-content');
 
 const ROOT = path.resolve(__dirname, '..');
 const GUIDES_DIR = path.join(ROOT, 'guides');
@@ -81,7 +82,8 @@ function countChecklistItems(content) {
 function validateGuides() {
   console.log('\nValidating guides...');
   const files = getAllFiles(GUIDES_DIR);
-  const seenIds = new Map(); // id → first file
+  const seenIds = new Map(); // id -> first file
+  let structuredCount = 0;
 
   for (const file of files) {
     const rel = path.relative(ROOT, file);
@@ -124,6 +126,18 @@ function validateGuides() {
       error(rel, 'no checklist items found (- [ ] ...) - sync will skip this guide');
     }
 
+    // item format (schema/guide-format.md), enforced for guides that use it
+    const parsed = parseGuideItems(content);
+    if (parsed.structured) {
+      structuredCount++;
+      for (const e of parsed.errors) error(rel, `line ${e.line}: ${e.message}`);
+      content.split('\n').forEach((line, i) => {
+        if (/[^\x00-\x7F]/.test(line)) {
+          error(rel, `line ${i + 1}: non-ASCII character (use plain hyphens and straight quotes)`);
+        }
+      });
+    }
+
     // title presence
     const hasTitle =
       /<h1[^>]*>[^<]+<\/h1>/.test(content) ||
@@ -134,7 +148,7 @@ function validateGuides() {
     }
   }
 
-  console.log(`  Scanned ${files.length} guide file(s). Found ${seenIds.size} unique IDs.`);
+  console.log(`  Scanned ${files.length} guide file(s). Found ${seenIds.size} unique IDs. ${structuredCount} use the channel-first item format.`);
 }
 
 // ── Requirements validation ────────────────────────────────────────────────

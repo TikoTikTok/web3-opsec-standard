@@ -15,3 +15,6 @@ jobs:
 
       - name: Run content validator
         run: node scripts/validate.js
+
+      - name: Check manifest.json is up to date
+        run: node scripts/build-manifest.js --check
