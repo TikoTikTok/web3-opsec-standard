@@ -5,12 +5,12 @@
 ## Requirements
 
 - [Domain 1: Wallet & Multi-Sig Management](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/requirements/01-wallet-multisig.md): 23 controls
-- [Domain 2: Endpoint Security](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/requirements/02-endpoints.md): 13 controls
+- [Domain 2: Endpoint Security](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/requirements/02-endpoints.md): 16 controls
 - [Domain 3: Communications & Social Media](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/requirements/03-communications-socials.md): 8 controls
 - [Domain 4: DevOps & Infrastructure](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/requirements/04-devops-infrastructure.md): 22 controls
 - [Domain 5: General Security](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/requirements/05-general-security.md): 25 controls
 - [Domain 6: Financial Controls & Banking Security](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/requirements/06-financial-controls.md): 20 controls
-- [Domain 7: AI Agent Operational Security](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/requirements/07-ai-agent-opsec.md): 7 controls
+- [Domain 7: AI Agent Operational Security](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/requirements/07-ai-agent-opsec.md): 22 controls
 - [Domain 8: Smart Contract & Protocol Operations](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/requirements/08-smart-contract-operations.md): 18 controls
 
 ## Guides
@@ -50,6 +50,7 @@
 - [AKS Configuration Guide](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/account%20configurations/organizations/cloud-platforms/aks.md): configuration checklist (organization)
 - [AWS Configuration Guide](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/account%20configurations/organizations/cloud-platforms/aws.md): configuration checklist (organization)
 - [Azure Configuration Guide](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/account%20configurations/organizations/cloud-platforms/azure.md): configuration checklist (organization)
+- [Amazon Bedrock Configuration Guide](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/account%20configurations/organizations/cloud-platforms/bedrock.md): configuration checklist (organization)
 - [EKS Configuration Guide](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/account%20configurations/organizations/cloud-platforms/eks.md): configuration checklist (organization)
 - [GCP Configuration Guide](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/account%20configurations/organizations/cloud-platforms/gcp.md): configuration checklist (organization)
 - [GKE Configuration Guide](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/account%20configurations/organizations/cloud-platforms/gke.md): configuration checklist (organization)
@@ -66,6 +67,8 @@
 - [Cloudflare Configuration Guide](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/account%20configurations/organizations/devops-accounts/cloudflare.md): configuration checklist (organization)
 - [Github Configuration Guide](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/account%20configurations/organizations/devops-accounts/github.md): configuration checklist (organization)
 - [Godaddy Configuration Guide](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/account%20configurations/organizations/devops-accounts/godaddy.md): configuration checklist (organization)
+- [LangChain Configuration Guide](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/account%20configurations/organizations/devops-accounts/langchain.md): configuration checklist (organization)
+- [Langfuse Configuration Guide](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/account%20configurations/organizations/devops-accounts/langfuse.md): configuration checklist (organization)
 - [Namecheap Configuration Guide](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/account%20configurations/organizations/devops-accounts/namecheap.md): configuration checklist (organization)
 - [Netlify Configuration Guide](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/account%20configurations/organizations/devops-accounts/netlify.md): configuration checklist (organization)
 - [npm Configuration Guide](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/account%20configurations/organizations/devops-accounts/npm.md): configuration checklist (organization)
@@ -77,7 +80,7 @@
 - [Tailscale Configuration Guide](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/account%20configurations/organizations/security-tools/tailscale.md): configuration checklist (organization)
 - [Coinbase Configuration Guide](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/account%20configurations/organizations/wallet-platforms/coinbase.md): configuration checklist (organization)
 - [Fireblocks Configuration Guide](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/account%20configurations/organizations/wallet-platforms/fireblocks.md): configuration checklist (organization)
-- [Safe&#123;Wallet&#125; Configuration Guide](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/account%20configurations/organizations/wallet-platforms/safe.md): configuration checklist (organization)
+- [Safe{Wallet} Configuration Guide](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/account%20configurations/organizations/wallet-platforms/safe.md): configuration checklist (organization)
 - [Squads Configuration Guide](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/account%20configurations/organizations/wallet-platforms/squads.md): configuration checklist (organization)
 - [authentication-and-mfa](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/authentication-and-mfa.md): implementation guide (individual)
 - [deployments-infra-access-control](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/deployments-infra-access-control.md): implementation guide (organization)
@@ -87,13 +90,35 @@
 - [Hiring & Contributor Vetting Guide](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/hiring-security.md): implementation guide (organization)
 - [Incident Response Playbooks](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/incident-response-playbooks.md): implementation guide (organization)
 - [incident-response-readiness](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/incident-response-readiness.md): implementation guide (organization)
-- [Work Devices](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/individual-security.md): implementation guide (individual)
+- [individual-security](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/individual-security.md): implementation guide (individual)
 - [Job Scam & Fake Recruiter Defense](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/job-scam-defense.md): implementation guide (individual)
 - [Key Generation Ceremony Guide](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/key-ceremony.md): implementation guide (organization)
+- [mobile-device-security](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/mobile-device-security.md): implementation guide (individual)
 - [mobile-security](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/mobile-security.md): implementation guide (individual)
 - [multisig-ideal-setup](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/multisig-ideal-setup.md): implementation guide (organization)
 - [physical-security-duress](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/physical-security-duress.md): implementation guide (individual)
 - [Protocol Due Diligence Guide](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/protocol-due-diligence.md): implementation guide (organization)
+- [attack-surface-reduction](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/recon/attack-surface-reduction.md): implementation guide (organization)
+- [brand-impersonation-response](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/recon/brand-impersonation-response.md): implementation guide (organization)
+- [contract-security](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/recon/contract-security.md): implementation guide (organization)
+- [contract-verification](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/recon/contract-verification.md): implementation guide (organization)
+- [cors-hardening](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/recon/cors-hardening.md): implementation guide (organization)
+- [credential-hygiene](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/recon/credential-hygiene.md): implementation guide (organization)
+- [dependency-management](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/recon/dependency-management.md): implementation guide (organization)
+- [dns-hardening](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/recon/dns-hardening.md): implementation guide (organization)
+- [email-dkim](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/recon/email-dkim.md): implementation guide (organization)
+- [email-dmarc](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/recon/email-dmarc.md): implementation guide (organization)
+- [email-spf](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/recon/email-spf.md): implementation guide (organization)
+- [enforce-2fa](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/recon/enforce-2fa.md): implementation guide (organization)
+- [multisig-treasury](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/recon/multisig-treasury.md): implementation guide (organization)
+- [phishing-resistance](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/recon/phishing-resistance.md): implementation guide (organization)
+- [secret-rotation](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/recon/secret-rotation.md): implementation guide (organization)
+- [secrets-exposure](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/recon/secrets-exposure.md): implementation guide (organization)
+- [social-media-security](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/recon/social-media-security.md): implementation guide (organization)
+- [subdomain-takeover](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/recon/subdomain-takeover.md): implementation guide (organization)
+- [tls-hardening](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/recon/tls-hardening.md): implementation guide (organization)
+- [web-security-headers](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/recon/web-security-headers.md): implementation guide (organization)
+- [Scan a project](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/supply-chain-dependency-security.md): implementation guide (organization)
 - [Transaction Verification Guide](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/transaction-verification.md): implementation guide (organization)
 - [travel-security](https://raw.githubusercontent.com/W3OSC/web3-opsec-standard/main/guides/travel-security.md): implementation guide (individual)
 
