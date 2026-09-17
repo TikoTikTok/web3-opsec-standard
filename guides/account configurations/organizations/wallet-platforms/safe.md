@@ -4,7 +4,7 @@ type: CONFIGURATION
 scope: ORGANIZATION
 -->
 
-<div align="center"> <img src="../../../../images/guides/safe.svg" alt="Safe Logo" width="64" height="64"> <h2><a href="https://app.safe.global/" target="_blank" rel="noopener noreferrer">Safe&#123;Wallet&#125;</a> Configuration Guide</h2> </div>
+<div align="center"> <img src="../../../../images/guides/safe.svg" alt="Safe Logo" width="64" height="64"> <h2><a href="https://app.safe.global/" target="_blank" rel="noopener noreferrer">Safe{Wallet}</a> Configuration Guide</h2> </div>
 
 ## Safe Setup
 
@@ -45,7 +45,7 @@ scope: ORGANIZATION
 ## Signing Policy
 
 - [ ]  Require every signer to run the built-in **transaction simulation** before signing; failed or skipped simulations are a blocker
-- [ ]  Require every signer to verify the **safeTxHash** shown on their hardware wallet screen against the hash shown in Safe&#123;Wallet&#125; before approving
+- [ ]  Require every signer to verify the **safeTxHash** shown on their hardware wallet screen against the hash shown in Safe{Wallet} before approving
 - [ ]  Treat any **delegatecall** warning as a blocker - do not sign unless the target is a known, audited contract (e.g. the official MultiSend) and the operation was expected
 - [ ]  Verify recipient address, amount, and network on the hardware device screen, not only in the browser
 
