@@ -9196,44 +9196,544 @@
       "scope": "ORGANIZATION",
       "path": "guides/account configurations/organizations/devops-accounts/langchain.md",
       "checklistItems": [
-        "Upgrade Every LangChain Package to a Patched Release — pip install pip-audit && pip-audit -r requirements.txt --fix && pip install -r requirements.txt; verify: pip-audit -r requirements.txt",
-        "Pin and Patch the Checkpoint and Store Packages Separately — pip install pip-tools && pip-compile -P langgraph-checkpoint -P langgraph-checkpoint-postgres -P langgraph-checkpoint-sqlite -o requirements.txt requirements.in && pip install -r requirements.txt; verify: pip show langgraph-checkpoint langgraph-checkpoint-postgres langgraph-checkpoint-sqlite",
-        "Rebuild the Agent Server Image on a Patched Release — langgraph build --pull -t <agent-image>:<tag>; verify: docker run --rm <agent-image>:<tag> pip show langgraph-api",
-        "Upgrade the Tracing SDK to a Patched Release — pip install -U langsmith; verify: pip show langsmith",
-        "Require Package Hashes on Every Install — pip install pip-tools && pip-compile --generate-hashes -o requirements.txt requirements.in && pip install --require-hashes -r requirements.txt; verify: grep -nE \"require-hashes|--hash=\" requirements*.txt Dockerfile",
-        "Pin langchain-community to Its Final Release and Schedule Its Removal (archived by the vendor, no further security fixes; move each integration to its partner package) — pip install pip-tools && pip-compile -P langchain-community -o requirements.txt requirements.in && pip install -r requirements.txt; verify: pip show langchain-community",
-        "Uninstall langchain-experimental (archived by the vendor, no further fixes; it ships the in-process PythonREPLTool and PALChain) — pip uninstall -y langchain-experimental && sed -i '/^langchain-experimental/d' requirements.in requirements.txt; verify: pip show langchain-experimental",
-        "Upgrade the JavaScript Packages to Patched Releases — npm audit fix; verify: npm audit",
-        "Make the Advisory Scan Fail the Build — pip install pip-audit && pip-audit -r requirements.txt && npm audit --audit-level=high",
-        "Set Every allow_dangerous_ Opt-In to False (each opt-in lets the agent load pickled objects or fetch arbitrary URLs) — sed -i -E 's/(allow_dangerous_[a-z_]+)=True/\\1=False/g' $(grep -rlE \"allow_dangerous_[a-z_]+=True\" --include=\".py\" .); verify: grep -rn \"allow_dangerous_\" --include=\".py\" .",
-        "Replace In-Process Code Execution with a Container-Sandboxed Shell Tool (PythonREPLTool, PALChain and ShellTool run agent-written code inside the server process; the default host policy sandboxes nothing) — ShellToolMiddleware(execution_policy=DockerExecutionPolicy(image=\"<sandbox-image>\")); verify: grep -rnE \"PythonREPL|PALChain|langchain_community.tools.shell|HostExecutionPolicy\" --include=\"*.py\" .",
-        "Grant Tool Credentials Read-Only Access Wherever the Task Allows — psql -d <db> -c \"CREATE ROLE agent_ro LOGIN PASSWORD '<password>'; GRANT CONNECT ON DATABASE <db> TO agent_ro; GRANT USAGE ON SCHEMA public TO agent_ro; GRANT SELECT ON ALL TABLES IN SCHEMA public TO agent_ro\"; verify: psql -d <db> -c \"SELECT has_table_privilege('agent_ro', '<table>', 'INSERT, UPDATE, DELETE')\"",
-        "Require Human Approval Before an Irreversible Tool Runs — HumanInTheLoopMiddleware(interrupt_on={\"<send_or_delete_tool>\": True}); verify: grep -rn \"interrupt_on\" --include=\"*.py\" .",
-        "Set Tool and Model Call Limits — ToolCallLimitMiddleware(run_limit=<n>), ModelCallLimitMiddleware(run_limit=<n>); verify: grep -rnE \"ToolCallLimitMiddleware|ModelCallLimitMiddleware\" --include=\"*.py\" .",
-        "Review Every Public Prompt-Hub Pull and Replace It with a Prompt You Own — Client().push_prompt(\"<prompt-name>\", object=<prompt>); verify: grep -rnE \"dangerously_pull_public_prompt|pull_prompt|hub.pull|pullPrompt\" .",
-        "Configure Custom Authentication — jq '.auth.path = \"./auth.py:auth\"' langgraph.json > langgraph.json.tmp && mv langgraph.json.tmp langgraph.json; verify: jq '.auth.path' langgraph.json",
-        "Do Not Turn Off Authentication for Studio Requests — jq '.auth.disable_studio_auth = false' langgraph.json > langgraph.json.tmp && mv langgraph.json.tmp langgraph.json; verify: jq '.auth.disable_studio_auth' langgraph.json",
-        "Restrict CORS Origins to an Explicit List — jq '.http.cors.allow_origins = [\"https://<app-origin>\"]' langgraph.json > langgraph.json.tmp && mv langgraph.json.tmp langgraph.json; verify: jq '.http.cors.allow_origins' langgraph.json",
-        "Disable Unused Endpoints — jq '.http += {disable_mcp:true, disable_a2a:true, disable_ui:true, disable_meta:true, disable_store:true}' langgraph.json > langgraph.json.tmp && mv langgraph.json.tmp langgraph.json; verify: jq '.http | {disable_mcp, disable_a2a, disable_ui, disable_meta, disable_store}' langgraph.json",
-        "Enable Authentication on Custom Routes and Run It First — jq '.http.enable_custom_route_auth = true | .http.middleware_order = \"auth_first\"' langgraph.json > langgraph.json.tmp && mv langgraph.json.tmp langgraph.json; verify: jq '.http.enable_custom_route_auth, .http.middleware_order' langgraph.json",
-        "Exclude Credentials from Header Logging — jq '.http.logging_headers = {excludes: [\"authorization\", \"cookie\", \"x-api-key\"]}' langgraph.json > langgraph.json.tmp && mv langgraph.json.tmp langgraph.json; verify: jq '.http.logging_headers' langgraph.json",
-        "Do Not Enable the LangSmith API-Key Fallback — jq '.auth.allow_langsmith_api_keys = false' langgraph.json > langgraph.json.tmp && mv langgraph.json.tmp langgraph.json; verify: jq '.auth.allow_langsmith_api_keys' langgraph.json",
-        "Set Checkpoint and Store TTLs — jq '.checkpointer.ttl = {strategy:\"delete\", default_ttl:43200, sweep_interval_minutes:60} | .store.ttl = {default_ttl:43200, refresh_on_read:false, sweep_interval_minutes:60}' langgraph.json > langgraph.json.tmp && mv langgraph.json.tmp langgraph.json; verify: jq '.checkpointer.ttl, .store.ttl' langgraph.json",
-        "Disable the Pickle Fallback and Set an Explicit JSON Module Allowlist — jq '.checkpointer.serde = {pickle_fallback:false, allowed_json_modules:[[\"<module>\",\"<Class>\"]]}' langgraph.json > langgraph.json.tmp && mv langgraph.json.tmp langgraph.json; verify: jq '.checkpointer.serde' langgraph.json",
-        "Restrict Webhook Targets in the URL Policy — jq '.webhooks.url = {allowed_domains:[\"hooks.<your-domain>\"], require_https:true, disable_private_ips:true, allowed_ports:[443]}' langgraph.json > langgraph.json.tmp && mv langgraph.json.tmp langgraph.json; verify: jq '.webhooks.url' langgraph.json",
-        "Encrypt Checkpoints at Rest — kubectl create secret generic langgraph-aes -n <namespace> --from-literal=LANGGRAPH_AES_KEY=$(openssl rand -hex 16) && kubectl set env deployment/<agent-server> -n <namespace> --from=secret/langgraph-aes; verify: kubectl exec deployment/<agent-server> -n <namespace> -- printenv LANGGRAPH_AES_KEY | tr -d '\\n' | wc -c",
-        "Disable Tracing or Point It at an Instance You Govern — kubectl set env deployment/<agent-server> -n <namespace> LANGSMITH_TRACING=false; verify: kubectl exec deployment/<agent-server> -n <namespace> -- printenv LANGSMITH_TRACING LANGSMITH_ENDPOINT",
-        "Hide Inputs and Outputs When Traces Leave the Boundary — kubectl set env deployment/<agent-server> -n <namespace> LANGSMITH_HIDE_INPUTS=true LANGSMITH_HIDE_OUTPUTS=true; verify: kubectl exec deployment/<agent-server> -n <namespace> -- printenv LANGSMITH_HIDE_INPUTS LANGSMITH_HIDE_OUTPUTS",
-        "Set a Trace Sampling Rate — kubectl set env deployment/<agent-server> -n <namespace> LANGSMITH_TRACING_SAMPLING_RATE=0.1; verify: kubectl exec deployment/<agent-server> -n <namespace> -- printenv LANGSMITH_TRACING_SAMPLING_RATE",
-        "Restrict Standalone-Server Egress to an Allowlist — kubectl patch networkpolicy <agent-egress-policy> -n <namespace> --type json -p '[{\"op\":\"add\",\"path\":\"/spec/egress/-\",\"value\":{\"to\":[{\"ipBlock\":{\"cidr\":\"<trace-endpoint-cidr>\"}}],\"ports\":[{\"protocol\":\"TCP\",\"port\":443}]}}]'; verify: kubectl get networkpolicy -n <namespace>",
-        "Connect to MCP Servers Over HTTPS Only, with an Explicit Credential — MCPAdapter(Client(\"https://<mcp-server>/mcp\", auth=<token>)); verify: grep -rn \"http://\" --include=\"*.py\" .",
-        "Require Approval for MCP Tools Annotated Destructive, Not by Tool Name — InterruptOnConfig(allowed_decisions=[\"approve\", \"reject\"], when=needs_approval); verify: grep -rnE \"destructive_?[Hh]int\" --include=\"*.py\" .",
-        "Send Each User's Own Credential on MCP Calls, Never One Shared Token — MCPAdapter(Client(CONFIG, auth=BearerAuth(token_for(user)))); verify: grep -rnwE \"auth|headers\" --include=\"*.py\" .",
-        "Deny All Egress by Default and Allow Only the Model, Checkpoint and Trace Endpoints — kubectl apply -n <namespace> -f <agent-egress-networkpolicy>.yaml; verify: kubectl get networkpolicy -n <namespace> -o yaml",
-        "Block the Metadata Endpoint — kubectl patch networkpolicy <agent-egress-policy> -n <namespace> --type json -p '[{\"op\":\"add\",\"path\":\"/spec/egress/0/to/0/ipBlock/except\",\"value\":[\"169.254.169.254/32\"]}]'; verify: kubectl get networkpolicy -n <namespace> -o yaml | grep 169.254.169.254",
-        "Disable Service-Account Token Automount — kubectl patch serviceaccount <agent-sa> -n <namespace> -p '{\"automountServiceAccountToken\": false}'; verify: kubectl get sa -n <namespace> -o jsonpath='{.items[*].automountServiceAccountToken}'",
-        "Run the Agent Non-Root with a Read-Only Root Filesystem — kubectl patch deployment <agent-server> -n <namespace> --type json -p '[{\"op\":\"add\",\"path\":\"/spec/template/spec/securityContext\",\"value\":{\"runAsNonRoot\":true}},{\"op\":\"add\",\"path\":\"/spec/template/spec/containers/0/securityContext\",\"value\":{\"readOnlyRootFilesystem\":true,\"allowPrivilegeEscalation\":false}}]'; verify: kubectl get pod -n <namespace> -o jsonpath='{.items[].spec.containers[].securityContext}'",
-        "Move Any Provider Key Found in the Repository or Image to a Secret Manager and Rotate It — kubectl create secret generic provider-keys -n <namespace> --from-literal=OPENAI_API_KEY=<rotated-key> --from-literal=LANGSMITH_API_KEY=<rotated-key> && kubectl set env deployment/<agent-server> -n <namespace> --from=secret/provider-keys; verify: grep -rnE \"(sk-|lsv2_)[A-Za-z0-9_-]{20,}\" --exclude-dir=.git ."
+        "Upgrade Every LangChain Package to a Patched Release - pass: pip-audit reports no known vulnerabilities in the installed LangChain packages",
+        "Pin and Patch the Checkpoint and Store Packages Separately - pass: langgraph-checkpoint and its Postgres and SQLite backends are pinned to their current patched releases",
+        "Rebuild the Agent Server Image on a Patched Release - pass: the deployed agent image carries the latest langgraph-api release",
+        "Upgrade the Tracing SDK to a Patched Release - pass: langsmith is at its latest release",
+        "Require Package Hashes on Every Install - pass: requirements.txt carries --hash= for every package and the image installs with --require-hashes",
+        "Pin langchain-community to Its Final Release and Schedule Its Removal (archived by the vendor, no further security fixes; move each integration to its partner package) - pass: langchain-community is pinned to its final release and a dated ticket tracks moving each integration to its partner package",
+        "Uninstall langchain-experimental (archived by the vendor, no further fixes; it ships the in-process PythonREPLTool and PALChain) - pass: langchain-experimental is not installed and not listed in any requirements file",
+        "Upgrade the JavaScript Packages to Patched Releases - pass: npm audit reports no vulnerabilities in the LangChain JavaScript packages",
+        "Make the Advisory Scan Fail the Build - pass: the CI pipeline runs pip-audit and npm audit --audit-level=high as blocking steps",
+        "Set Every allow_dangerous_ Opt-In to False (each opt-in lets the agent load pickled objects or fetch arbitrary URLs) - pass: no allow_dangerous_*=True remains in the repository",
+        "Replace In-Process Code Execution with a Container-Sandboxed Shell Tool (PythonREPLTool, PALChain and ShellTool run agent-written code inside the server process; the default host policy sandboxes nothing) - pass: no in-process code tool is imported and every shell tool uses a container execution policy",
+        "Grant Tool Credentials Read-Only Access Wherever the Task Allows - pass: every database credential a tool holds can only SELECT unless the task needs writes",
+        "Require Human Approval Before an Irreversible Tool Runs - pass: every tool that sends, deletes, pays or deploys is listed in a HumanInTheLoopMiddleware interrupt_on map",
+        "Set Tool and Model Call Limits - pass: every agent runs with ToolCallLimitMiddleware and ModelCallLimitMiddleware and explicit run limits",
+        "Review Every Public Prompt-Hub Pull and Replace It with a Prompt You Own - pass: no agent pulls a public hub prompt at runtime; every prompt lives in a workspace you own",
+        "Configure Custom Authentication - pass: auth.path in langgraph.json points at your authentication handler",
+        "Do Not Turn Off Authentication for Studio Requests - pass: auth.disable_studio_auth is false or absent",
+        "Restrict CORS Origins to an Explicit List - pass: http.cors.allow_origins lists only your application origins",
+        "Disable Unused Endpoints - pass: every endpoint group the agent does not use (mcp, a2a, ui, meta, store) is disabled",
+        "Enable Authentication on Custom Routes and Run It First - pass: http.enable_custom_route_auth is true and http.middleware_order is auth_first",
+        "Exclude Credentials from Header Logging - pass: http.logging_headers.excludes lists authorization, cookie and x-api-key",
+        "Do Not Enable the LangSmith API-Key Fallback - pass: auth.allow_langsmith_api_keys is false or absent",
+        "Set Checkpoint and Store TTLs - pass: checkpointer.ttl and store.ttl set a default_ttl no longer than your retention policy",
+        "Disable the Pickle Fallback and Set an Explicit JSON Module Allowlist - pass: checkpointer.serde.pickle_fallback is false and allowed_json_modules lists only the classes the state needs",
+        "Restrict Webhook Targets in the URL Policy - pass: webhooks.url allows only your domains over HTTPS on port 443 and blocks private IPs",
+        "Encrypt Checkpoints at Rest - pass: LANGGRAPH_AES_KEY is set on the Agent Server from a secret and is 32 hex characters",
+        "Disable Tracing or Point It at an Instance You Govern - pass: LANGSMITH_TRACING is false, or LANGSMITH_ENDPOINT is a LangSmith instance you operate or contractually govern",
+        "Hide Inputs and Outputs When Traces Leave the Boundary - pass: LANGSMITH_HIDE_INPUTS and LANGSMITH_HIDE_OUTPUTS are true whenever traces go to an external instance",
+        "Set a Trace Sampling Rate - pass: LANGSMITH_TRACING_SAMPLING_RATE is set below 1 in production",
+        "Restrict Standalone-Server Egress to an Allowlist - pass: the agent's egress NetworkPolicy allows the trace endpoint on 443 and nothing else beyond the model and checkpoint endpoints",
+        "Connect to MCP Servers Over HTTPS Only, with an Explicit Credential - pass: every MCP client URL is https:// and carries an explicit auth credential",
+        "Require Approval for MCP Tools Annotated Destructive, Not by Tool Name - pass: the interrupt policy keys on the MCP destructiveHint annotation rather than a list of tool names",
+        "Send Each User's Own Credential on MCP Calls, Never One Shared Token - pass: MCP calls carry the requesting user's token, and no shared static token is configured",
+        "Deny All Egress by Default and Allow Only the Model, Checkpoint and Trace Endpoints - pass: a NetworkPolicy selecting the agent pods denies egress by default and allows only the model, checkpoint and trace endpoints",
+        "Block the Metadata Endpoint - pass: the egress policy excludes 169.254.169.254/32",
+        "Disable Service-Account Token Automount - pass: the agent's service account has automountServiceAccountToken: false",
+        "Run the Agent Non-Root with a Read-Only Root Filesystem - pass: the agent pod has runAsNonRoot: true, readOnlyRootFilesystem: true and allowPrivilegeEscalation: false",
+        "Move Any Provider Key Found in the Repository or Image to a Secret Manager and Rotate It - pass: no provider or LangSmith key appears in the repository or image, and every key found was rotated"
+      ],
+      "items": [
+        {
+          "title": "Upgrade Every LangChain Package to a Patched Release",
+          "pass": "`pip-audit` reports no known vulnerabilities in the installed LangChain packages",
+          "cli": {
+            "verify": [
+              "pip-audit -r requirements.txt"
+            ],
+            "fix": [
+              "pip install pip-audit && pip-audit -r requirements.txt --fix && pip install -r requirements.txt"
+            ],
+            "expect": "`No known vulnerabilities found`. Every advisory listed is a public exploit path into the agent process."
+          }
+        },
+        {
+          "title": "Pin and Patch the Checkpoint and Store Packages Separately",
+          "pass": "`langgraph-checkpoint` and its Postgres and SQLite backends are pinned to their current patched releases",
+          "cli": {
+            "verify": [
+              "pip show langgraph-checkpoint langgraph-checkpoint-postgres langgraph-checkpoint-sqlite"
+            ],
+            "fix": [
+              "pip install pip-tools && pip-compile -P langgraph-checkpoint -P langgraph-checkpoint-postgres \\\n  -P langgraph-checkpoint-sqlite -o requirements.txt requirements.in && pip install -r requirements.txt"
+            ],
+            "expect": "each package prints a `Version` equal to the latest release on PyPI. The checkpoint packages deserialize stored state, so an old one is a deserialization bug waiting for a crafted checkpoint."
+          }
+        },
+        {
+          "title": "Rebuild the Agent Server Image on a Patched Release",
+          "pass": "the deployed agent image carries the latest `langgraph-api` release",
+          "cli": {
+            "verify": [
+              "docker run --rm <agent-image>:<tag> pip show langgraph-api"
+            ],
+            "fix": [
+              "langgraph build --pull -t <agent-image>:<tag>"
+            ],
+            "expect": "`Version` equals the latest `langgraph-api` release. The server package is the HTTP surface of the agent, and an old image keeps every fixed server bug live."
+          }
+        },
+        {
+          "title": "Upgrade the Tracing SDK to a Patched Release",
+          "pass": "`langsmith` is at its latest release",
+          "cli": {
+            "verify": [
+              "pip show langsmith"
+            ],
+            "fix": [
+              "pip install -U langsmith"
+            ],
+            "expect": "`Version` equals the latest `langsmith` release. The tracing SDK ships prompts and outputs off the host, so a patched client is the one you want handling them."
+          }
+        },
+        {
+          "title": "Require Package Hashes on Every Install",
+          "pass": "`requirements.txt` carries `--hash=` for every package and the image installs with `--require-hashes`",
+          "cli": {
+            "verify": [
+              "grep -nE \"require-hashes|--hash=\" requirements*.txt Dockerfile"
+            ],
+            "fix": [
+              "pip install pip-tools && pip-compile --generate-hashes -o requirements.txt requirements.in && \\\n  pip install --require-hashes -r requirements.txt"
+            ],
+            "expect": "a `--hash=` line for every requirement and `--require-hashes` in the install command. Without hashes a hijacked package name on the index installs unnoticed."
+          }
+        },
+        {
+          "title": "Pin langchain-community to Its Final Release and Schedule Its Removal (archived by the vendor, no further security fixes; move each integration to its partner package)",
+          "pass": "`langchain-community` is pinned to its final release and a dated ticket tracks moving each integration to its partner package",
+          "cli": {
+            "verify": [
+              "pip show langchain-community"
+            ],
+            "fix": [
+              "pip install pip-tools && pip-compile -P langchain-community -o requirements.txt requirements.in && \\\n  pip install -r requirements.txt"
+            ],
+            "expect": "either `not found`, or `Version` equal to the final published release with a removal ticket on the board. An archived package ships no fix for the next advisory."
+          }
+        },
+        {
+          "title": "Uninstall langchain-experimental (archived by the vendor, no further fixes; it ships the in-process PythonREPLTool and PALChain)",
+          "pass": "`langchain-experimental` is not installed and not listed in any requirements file",
+          "cli": {
+            "verify": [
+              "pip show langchain-experimental"
+            ],
+            "fix": [
+              "pip uninstall -y langchain-experimental && sed -i '/^langchain-experimental/d' requirements.in requirements.txt"
+            ],
+            "expect": "`WARNING: Package(s) not found: langchain-experimental`. The package puts an unsandboxed Python REPL one import away from every agent."
+          }
+        },
+        {
+          "title": "Upgrade the JavaScript Packages to Patched Releases",
+          "pass": "`npm audit` reports no vulnerabilities in the LangChain JavaScript packages",
+          "cli": {
+            "verify": [
+              "npm audit"
+            ],
+            "fix": [
+              "npm audit fix"
+            ],
+            "expect": "`found 0 vulnerabilities`. Each listed advisory is a public exploit path into the Node agent."
+          }
+        },
+        {
+          "title": "Make the Advisory Scan Fail the Build",
+          "pass": "the CI pipeline runs `pip-audit` and `npm audit --audit-level=high` as blocking steps",
+          "cli": {
+            "verify": [
+              "grep -rnE \"pip-audit|npm audit\" .github .gitlab-ci.yml Jenkinsfile 2>/dev/null"
+            ],
+            "fix": [
+              "pip install pip-audit && pip-audit -r requirements.txt && npm audit --audit-level=high"
+            ],
+            "expect": "at least one hit in a pipeline step that has no `continue-on-error` or `allow_failure`. A scan that only warns is a scan nobody reads."
+          }
+        },
+        {
+          "title": "Set Every allow_dangerous_ Opt-In to False (each opt-in lets the agent load pickled objects or fetch arbitrary URLs)",
+          "pass": "no `allow_dangerous_*=True` remains in the repository",
+          "cli": {
+            "verify": [
+              "grep -rn \"allow_dangerous_\" --include=\"*.py\" ."
+            ],
+            "fix": [
+              "sed -i -E 's/(allow_dangerous_[a-z_]+)=True/\\1=False/g' \\\n  $(grep -rlE \"allow_dangerous_[a-z_]+=True\" --include=\"*.py\" .)"
+            ],
+            "expect": "no output, or only lines ending in `=False`. Each opt-in lets the agent unpickle attacker-supplied objects or fetch arbitrary URLs from inside the server."
+          }
+        },
+        {
+          "title": "Replace In-Process Code Execution with a Container-Sandboxed Shell Tool (PythonREPLTool, PALChain and ShellTool run agent-written code inside the server process; the default host policy sandboxes nothing)",
+          "pass": "no in-process code tool is imported and every shell tool uses a container execution policy",
+          "cli": {
+            "verify": [
+              "grep -rnE \"PythonREPL|PALChain|langchain_community.tools.shell|HostExecutionPolicy\" --include=\"*.py\" ."
+            ],
+            "fix": [
+              "from langchain.agents.middleware import ShellToolMiddleware, DockerExecutionPolicy\n\nShellToolMiddleware(execution_policy=DockerExecutionPolicy(image=\"<sandbox-image>\"))"
+            ],
+            "expect": "no output. An in-process tool runs model-written code with the server's secrets, filesystem and network."
+          }
+        },
+        {
+          "title": "Grant Tool Credentials Read-Only Access Wherever the Task Allows",
+          "pass": "every database credential a tool holds can only `SELECT` unless the task needs writes",
+          "cli": {
+            "verify": [
+              "psql -d <db> -c \"SELECT has_table_privilege('agent_ro', '<table>', 'INSERT, UPDATE, DELETE')\""
+            ],
+            "fix": [
+              "psql -d <db> -c \"CREATE ROLE agent_ro LOGIN PASSWORD '<password>'; GRANT CONNECT ON DATABASE <db> TO agent_ro; \\\n  GRANT USAGE ON SCHEMA public TO agent_ro; GRANT SELECT ON ALL TABLES IN SCHEMA public TO agent_ro\""
+            ],
+            "expect": "`f`. A tool credential that can write turns a prompt injection into a data-destruction path."
+          }
+        },
+        {
+          "title": "Require Human Approval Before an Irreversible Tool Runs",
+          "pass": "every tool that sends, deletes, pays or deploys is listed in a `HumanInTheLoopMiddleware` `interrupt_on` map",
+          "cli": {
+            "verify": [
+              "grep -rn \"interrupt_on\" --include=\"*.py\" ."
+            ],
+            "fix": [
+              "HumanInTheLoopMiddleware(interrupt_on={\"<send_or_delete_tool>\": True})"
+            ],
+            "expect": "one `interrupt_on` entry naming each irreversible tool. Without an interrupt the model's first mistaken call is final."
+          }
+        },
+        {
+          "title": "Set Tool and Model Call Limits",
+          "pass": "every agent runs with `ToolCallLimitMiddleware` and `ModelCallLimitMiddleware` and explicit run limits",
+          "cli": {
+            "verify": [
+              "grep -rnE \"ToolCallLimitMiddleware|ModelCallLimitMiddleware\" --include=\"*.py\" ."
+            ],
+            "fix": [
+              "ToolCallLimitMiddleware(run_limit=<n>), ModelCallLimitMiddleware(run_limit=<n>)"
+            ],
+            "expect": "both middlewares appear in every agent definition with a `run_limit`. An unbounded loop burns budget and keeps retrying a harmful tool call until it succeeds."
+          }
+        },
+        {
+          "title": "Review Every Public Prompt-Hub Pull and Replace It with a Prompt You Own",
+          "pass": "no agent pulls a public hub prompt at runtime; every prompt lives in a workspace you own",
+          "console": {
+            "verify": "LangSmith > Prompts > every prompt the agents load is listed under your workspace, and none is a public prompt from another owner",
+            "fix": "LangSmith > Prompts > open the public prompt > Fork into your workspace > review the text > Commit; then update the agent to pull your copy by name"
+          },
+          "cli": {
+            "verify": [
+              "grep -rnE \"dangerously_pull_public_prompt|pull_prompt|hub.pull|pullPrompt\" ."
+            ],
+            "fix": [
+              "Client().push_prompt(\"<prompt-name>\", object=<prompt>)"
+            ],
+            "expect": "no `dangerously_pull_public_prompt`, and every `pull_prompt` names a prompt in your own workspace. A public prompt can be edited by its owner at any time and lands in your agent on the next run."
+          }
+        },
+        {
+          "title": "Configure Custom Authentication",
+          "pass": "`auth.path` in `langgraph.json` points at your authentication handler",
+          "cli": {
+            "verify": [
+              "jq '.auth.path' langgraph.json"
+            ],
+            "fix": [
+              "jq '.auth.path = \"./auth.py:auth\"' langgraph.json > langgraph.json.tmp && mv langgraph.json.tmp langgraph.json"
+            ],
+            "expect": "`\"./auth.py:auth\"` or your handler's path, not `null`. Without a handler every request to the server is anonymous."
+          }
+        },
+        {
+          "title": "Do Not Turn Off Authentication for Studio Requests",
+          "pass": "`auth.disable_studio_auth` is `false` or absent",
+          "cli": {
+            "verify": [
+              "jq '.auth.disable_studio_auth' langgraph.json"
+            ],
+            "fix": [
+              "jq '.auth.disable_studio_auth = false' langgraph.json > langgraph.json.tmp && mv langgraph.json.tmp langgraph.json"
+            ],
+            "expect": "`false` or `null`. Disabling it lets any request that claims to come from Studio skip your handler."
+          }
+        },
+        {
+          "title": "Restrict CORS Origins to an Explicit List",
+          "pass": "`http.cors.allow_origins` lists only your application origins",
+          "cli": {
+            "verify": [
+              "jq '.http.cors.allow_origins' langgraph.json"
+            ],
+            "fix": [
+              "jq '.http.cors.allow_origins = [\"https://<app-origin>\"]' langgraph.json > langgraph.json.tmp && \\\n  mv langgraph.json.tmp langgraph.json"
+            ],
+            "expect": "an array of your own `https://` origins with no `*`. A wildcard lets any web page call the server with the user's cookies."
+          }
+        },
+        {
+          "title": "Disable Unused Endpoints",
+          "pass": "every endpoint group the agent does not use (`mcp`, `a2a`, `ui`, `meta`, `store`) is disabled",
+          "cli": {
+            "verify": [
+              "jq '.http | {disable_mcp, disable_a2a, disable_ui, disable_meta, disable_store}' langgraph.json"
+            ],
+            "fix": [
+              "jq '.http += {disable_mcp:true, disable_a2a:true, disable_ui:true, disable_meta:true, disable_store:true}' \\\n  langgraph.json > langgraph.json.tmp && mv langgraph.json.tmp langgraph.json"
+            ],
+            "expect": "`true` for every group the agent does not use. Each enabled group is an authenticated surface you are not watching."
+          }
+        },
+        {
+          "title": "Enable Authentication on Custom Routes and Run It First",
+          "pass": "`http.enable_custom_route_auth` is `true` and `http.middleware_order` is `auth_first`",
+          "cli": {
+            "verify": [
+              "jq '.http.enable_custom_route_auth, .http.middleware_order' langgraph.json"
+            ],
+            "fix": [
+              "jq '.http.enable_custom_route_auth = true | .http.middleware_order = \"auth_first\"' langgraph.json \\\n  > langgraph.json.tmp && mv langgraph.json.tmp langgraph.json"
+            ],
+            "expect": "`true` then `\"auth_first\"`. Otherwise custom routes serve unauthenticated, and custom middleware runs before the caller is known."
+          }
+        },
+        {
+          "title": "Exclude Credentials from Header Logging",
+          "pass": "`http.logging_headers.excludes` lists `authorization`, `cookie` and `x-api-key`",
+          "cli": {
+            "verify": [
+              "jq '.http.logging_headers' langgraph.json"
+            ],
+            "fix": [
+              "jq '.http.logging_headers = {excludes: [\"authorization\", \"cookie\", \"x-api-key\"]}' langgraph.json \\\n  > langgraph.json.tmp && mv langgraph.json.tmp langgraph.json"
+            ],
+            "expect": "an `excludes` array containing `authorization`, `cookie` and `x-api-key`. Logged headers put every bearer token and session cookie into the log pipeline."
+          }
+        },
+        {
+          "title": "Do Not Enable the LangSmith API-Key Fallback",
+          "pass": "`auth.allow_langsmith_api_keys` is `false` or absent",
+          "cli": {
+            "verify": [
+              "jq '.auth.allow_langsmith_api_keys' langgraph.json"
+            ],
+            "fix": [
+              "jq '.auth.allow_langsmith_api_keys = false' langgraph.json > langgraph.json.tmp && mv langgraph.json.tmp langgraph.json"
+            ],
+            "expect": "`false` or `null`. With the fallback on, any LangSmith API key in the workspace also authenticates to the agent, bypassing your handler."
+          }
+        },
+        {
+          "title": "Set Checkpoint and Store TTLs",
+          "pass": "`checkpointer.ttl` and `store.ttl` set a `default_ttl` no longer than your retention policy",
+          "cli": {
+            "verify": [
+              "jq '.checkpointer.ttl, .store.ttl' langgraph.json"
+            ],
+            "fix": [
+              "jq '.checkpointer.ttl = {strategy:\"delete\", default_ttl:43200, sweep_interval_minutes:60} |\n    .store.ttl = {default_ttl:43200, refresh_on_read:false, sweep_interval_minutes:60}' \\\n  langgraph.json > langgraph.json.tmp && mv langgraph.json.tmp langgraph.json"
+            ],
+            "expect": "both objects present with `default_ttl` in minutes within policy and a `sweep_interval_minutes`. Without a TTL every conversation and its inputs stay in the database forever."
+          }
+        },
+        {
+          "title": "Disable the Pickle Fallback and Set an Explicit JSON Module Allowlist",
+          "pass": "`checkpointer.serde.pickle_fallback` is `false` and `allowed_json_modules` lists only the classes the state needs",
+          "cli": {
+            "verify": [
+              "jq '.checkpointer.serde' langgraph.json"
+            ],
+            "fix": [
+              "jq '.checkpointer.serde = {pickle_fallback:false, allowed_json_modules:[[\"<module>\",\"<Class>\"]]}' \\\n  langgraph.json > langgraph.json.tmp && mv langgraph.json.tmp langgraph.json"
+            ],
+            "expect": "`pickle_fallback: false` and an explicit `allowed_json_modules` array. With pickle enabled a crafted checkpoint executes code when it is loaded."
+          }
+        },
+        {
+          "title": "Restrict Webhook Targets in the URL Policy",
+          "pass": "`webhooks.url` allows only your domains over HTTPS on port 443 and blocks private IPs",
+          "cli": {
+            "verify": [
+              "jq '.webhooks.url' langgraph.json"
+            ],
+            "fix": [
+              "jq '.webhooks.url = {allowed_domains:[\"hooks.<your-domain>\"], require_https:true, disable_private_ips:true, allowed_ports:[443]}' \\\n  langgraph.json > langgraph.json.tmp && mv langgraph.json.tmp langgraph.json"
+            ],
+            "expect": "`allowed_domains` naming your hosts, `require_https: true`, `disable_private_ips: true`, `allowed_ports: [443]`. An open policy lets a run's webhook field point at internal services."
+          }
+        },
+        {
+          "title": "Encrypt Checkpoints at Rest",
+          "pass": "`LANGGRAPH_AES_KEY` is set on the Agent Server from a secret and is 32 hex characters",
+          "cli": {
+            "verify": [
+              "kubectl exec deployment/$AGENT -n $NS -- printenv LANGGRAPH_AES_KEY | tr -d '\\n' | wc -c"
+            ],
+            "fix": [
+              "kubectl create secret generic langgraph-aes -n $NS --from-literal=LANGGRAPH_AES_KEY=$(openssl rand -hex 16) && \\\n  kubectl set env deployment/$AGENT -n $NS --from=secret/langgraph-aes"
+            ],
+            "expect": "`32`. Without the key every checkpoint sits in Postgres in plain text."
+          }
+        },
+        {
+          "title": "Disable Tracing or Point It at an Instance You Govern",
+          "pass": "`LANGSMITH_TRACING` is `false`, or `LANGSMITH_ENDPOINT` is a LangSmith instance you operate or contractually govern",
+          "cli": {
+            "verify": [
+              "kubectl exec deployment/$AGENT -n $NS -- printenv LANGSMITH_TRACING LANGSMITH_ENDPOINT"
+            ],
+            "fix": [
+              "kubectl set env deployment/$AGENT -n $NS LANGSMITH_TRACING=false"
+            ],
+            "expect": "`false`, or `true` followed by the endpoint of your governed instance. Default tracing sends every prompt and output to the vendor's cloud."
+          }
+        },
+        {
+          "title": "Hide Inputs and Outputs When Traces Leave the Boundary",
+          "pass": "`LANGSMITH_HIDE_INPUTS` and `LANGSMITH_HIDE_OUTPUTS` are `true` whenever traces go to an external instance",
+          "cli": {
+            "verify": [
+              "kubectl exec deployment/$AGENT -n $NS -- printenv LANGSMITH_HIDE_INPUTS LANGSMITH_HIDE_OUTPUTS"
+            ],
+            "fix": [
+              "kubectl set env deployment/$AGENT -n $NS LANGSMITH_HIDE_INPUTS=true LANGSMITH_HIDE_OUTPUTS=true"
+            ],
+            "expect": "`true` on both lines. Otherwise the full prompt and completion, with whatever customer data they carry, leave the boundary in every trace."
+          }
+        },
+        {
+          "title": "Set a Trace Sampling Rate",
+          "pass": "`LANGSMITH_TRACING_SAMPLING_RATE` is set below `1` in production",
+          "cli": {
+            "verify": [
+              "kubectl exec deployment/$AGENT -n $NS -- printenv LANGSMITH_TRACING_SAMPLING_RATE"
+            ],
+            "fix": [
+              "kubectl set env deployment/$AGENT -n $NS LANGSMITH_TRACING_SAMPLING_RATE=0.1"
+            ],
+            "expect": "a value such as `0.1`. Full sampling exports every production conversation rather than a debugging sample."
+          }
+        },
+        {
+          "title": "Restrict Standalone-Server Egress to an Allowlist",
+          "pass": "the agent's egress NetworkPolicy allows the trace endpoint on 443 and nothing else beyond the model and checkpoint endpoints",
+          "cli": {
+            "verify": [
+              "kubectl get networkpolicy -n $NS"
+            ],
+            "fix": [
+              "kubectl patch networkpolicy <agent-egress-policy> -n $NS --type json -p \\\n  '[{\"op\":\"add\",\"path\":\"/spec/egress/-\",\"value\":{\"to\":[{\"ipBlock\":{\"cidr\":\"<trace-endpoint-cidr>\"}}],\"ports\":[{\"protocol\":\"TCP\",\"port\":443}]}}]'"
+            ],
+            "expect": "an egress policy selecting the agent pods, with rules only for the model, checkpoint and trace endpoints. Unrestricted egress lets a prompt injection exfiltrate state to any host."
+          }
+        },
+        {
+          "title": "Connect to MCP Servers Over HTTPS Only, with an Explicit Credential",
+          "pass": "every MCP client URL is `https://` and carries an explicit auth credential",
+          "cli": {
+            "verify": [
+              "grep -rn \"http://\" --include=\"*.py\" ."
+            ],
+            "fix": [
+              "MCPAdapter(Client(\"https://<mcp-server>/mcp\", auth=<token>))"
+            ],
+            "expect": "no MCP server URL in the output. A plain-HTTP MCP connection exposes tool calls and their credentials on the wire."
+          }
+        },
+        {
+          "title": "Require Approval for MCP Tools Annotated Destructive, Not by Tool Name",
+          "pass": "the interrupt policy keys on the MCP `destructiveHint` annotation rather than a list of tool names",
+          "cli": {
+            "verify": [
+              "grep -rnE \"destructive_?[Hh]int\" --include=\"*.py\" ."
+            ],
+            "fix": [
+              "InterruptOnConfig(allowed_decisions=[\"approve\", \"reject\"], when=needs_approval)"
+            ],
+            "expect": "at least one hit inside the approval predicate. A name list misses every destructive tool the MCP server adds or renames later."
+          }
+        },
+        {
+          "title": "Send Each User's Own Credential on MCP Calls, Never One Shared Token",
+          "pass": "MCP calls carry the requesting user's token, and no shared static token is configured",
+          "cli": {
+            "verify": [
+              "grep -rnwE \"auth|headers\" --include=\"*.py\" ."
+            ],
+            "fix": [
+              "MCPAdapter(Client(CONFIG, auth=BearerAuth(token_for(user))))"
+            ],
+            "expect": "every MCP client auth derives from the current user, with no hard-coded or environment-wide token. A shared token gives every user the union of everyone's permissions on the MCP server."
+          }
+        },
+        {
+          "title": "Deny All Egress by Default and Allow Only the Model, Checkpoint and Trace Endpoints",
+          "pass": "a NetworkPolicy selecting the agent pods denies egress by default and allows only the model, checkpoint and trace endpoints",
+          "cli": {
+            "verify": [
+              "kubectl get networkpolicy -n $NS -o yaml"
+            ],
+            "fix": [
+              "kubectl apply -n $NS -f <agent-egress-networkpolicy>.yaml"
+            ],
+            "expect": "a policy with `policyTypes: [Egress]` selecting the agent pods and `egress` rules only for the three endpoint sets. Without it the agent can reach every service in the cluster and on the internet."
+          }
+        },
+        {
+          "title": "Block the Metadata Endpoint",
+          "pass": "the egress policy excludes `169.254.169.254/32`",
+          "cli": {
+            "verify": [
+              "kubectl get networkpolicy -n $NS -o yaml | grep 169.254.169.254"
+            ],
+            "fix": [
+              "kubectl patch networkpolicy <agent-egress-policy> -n $NS --type json -p \\\n  '[{\"op\":\"add\",\"path\":\"/spec/egress/0/to/0/ipBlock/except\",\"value\":[\"169.254.169.254/32\"]}]'"
+            ],
+            "expect": "the address appears under an `except` list. Reaching the metadata endpoint hands the agent the node's cloud credentials."
+          }
+        },
+        {
+          "title": "Disable Service-Account Token Automount",
+          "pass": "the agent's service account has `automountServiceAccountToken: false`",
+          "cli": {
+            "verify": [
+              "kubectl get sa -n $NS -o jsonpath='{.items[*].automountServiceAccountToken}'"
+            ],
+            "fix": [
+              "kubectl patch serviceaccount <agent-sa> -n $NS -p '{\"automountServiceAccountToken\": false}'"
+            ],
+            "expect": "`false` for the agent's service account. A mounted token lets code the agent runs talk to the Kubernetes API as the pod."
+          }
+        },
+        {
+          "title": "Run the Agent Non-Root with a Read-Only Root Filesystem",
+          "pass": "the agent pod has `runAsNonRoot: true`, `readOnlyRootFilesystem: true` and `allowPrivilegeEscalation: false`",
+          "cli": {
+            "verify": [
+              "kubectl get pod -n $NS -o jsonpath='{.items[*].spec.containers[*].securityContext}'"
+            ],
+            "fix": [
+              "kubectl patch deployment $AGENT -n $NS --type json -p \\\n  '[{\"op\":\"add\",\"path\":\"/spec/template/spec/securityContext\",\"value\":{\"runAsNonRoot\":true}},\n    {\"op\":\"add\",\"path\":\"/spec/template/spec/containers/0/securityContext\",\"value\":{\"readOnlyRootFilesystem\":true,\"allowPrivilegeEscalation\":false}}]'"
+            ],
+            "expect": "`readOnlyRootFilesystem:true` and `allowPrivilegeEscalation:false` on every agent container, with `runAsNonRoot:true` on the pod. A root, writable container turns any code-execution bug into a full host foothold."
+          }
+        },
+        {
+          "title": "Move Any Provider Key Found in the Repository or Image to a Secret Manager and Rotate It",
+          "pass": "no provider or LangSmith key appears in the repository or image, and every key found was rotated",
+          "cli": {
+            "verify": [
+              "grep -rnE \"(sk-|lsv2_)[A-Za-z0-9_-]{20,}\" --exclude-dir=.git ."
+            ],
+            "fix": [
+              "kubectl create secret generic provider-keys -n $NS --from-literal=OPENAI_API_KEY=<rotated-key> \\\n  --from-literal=LANGSMITH_API_KEY=<rotated-key> && kubectl set env deployment/$AGENT -n $NS --from=secret/provider-keys"
+            ],
+            "expect": "no output. A key in git history or an image layer is already shared with everyone who can pull either."
+          }
+        }
       ]
     },
     {
@@ -9245,50 +9745,641 @@
       "scope": "ORGANIZATION",
       "path": "guides/account configurations/organizations/devops-accounts/langfuse.md",
       "checklistItems": [
-        "Assign Organization Roles at Least Privilege — curl -u <org-public-key>:<org-secret-key> -X PUT https://<langfuse-host>/api/public/organizations/memberships -H 'Content-Type: application/json' -d '{\"userId\":\"<user-id>\",\"role\":\"VIEWER\"}'; verify: curl -u <org-public-key>:<org-secret-key> https://<langfuse-host>/api/public/organizations/memberships",
-        "Set Single-Project Users to NONE Plus a Project Role (the organization role NONE is set under Organization Settings > Members; the memberships API takes OWNER, ADMIN, MEMBER or VIEWER) — curl -u <org-public-key>:<org-secret-key> -X PUT https://<langfuse-host>/api/public/projects/<project-id>/memberships -H 'Content-Type: application/json' -d '{\"userId\":\"<user-id>\",\"role\":\"MEMBER\"}'; verify: curl -u <org-public-key>:<org-secret-key> https://<langfuse-host>/api/public/organizations/memberships",
-        "Set a Data Retention Window — curl -u <org-public-key>:<org-secret-key> -X PUT https://<langfuse-host>/api/public/projects/<project-id> -H 'Content-Type: application/json' -d '{\"name\":\"<project-name>\",\"retention\":30}'; verify: curl -u <public-key>:<secret-key> https://<langfuse-host>/api/public/projects",
-        "Review Project API Keys and Rotate Them on a Schedule — curl -u <org-public-key>:<org-secret-key> -X POST https://<langfuse-host>/api/public/projects/<project-id>/apiKeys -H 'Content-Type: application/json' -d '{\"note\":\"<service>-<environment>-<date>\"}' && curl -u <org-public-key>:<org-secret-key> -X DELETE https://<langfuse-host>/api/public/projects/<project-id>/apiKeys/<old-api-key-id>; verify: curl -u <org-public-key>:<org-secret-key> https://<langfuse-host>/api/public/projects/<project-id>/apiKeys",
-        "Revoke Organization-Scoped API Keys Not Used for Provisioning — Organization Settings > API Keys > delete every key that provisioning automation does not hold; verify: curl -u <org-public-key>:<org-secret-key> https://<langfuse-host>/api/public/organizations/apiKeys",
-        "Restrict Stored LLM Connections to Approved Endpoints — curl -u <public-key>:<secret-key> -X PUT https://<langfuse-host>/api/public/llm-connections -H 'Content-Type: application/json' -d '{\"provider\":\"<provider-name>\",\"adapter\":\"openai\",\"secretKey\":\"<provider-key>\",\"baseURL\":\"https://<approved-gateway>/v1\"}'; verify: curl -u <public-key>:<secret-key> https://<langfuse-host>/api/public/llm-connections",
-        "Unshare Public Traces That Are Not Safe to Publish — Trace > public > off; verify: curl -u <public-key>:<secret-key> 'https://<langfuse-host>/api/public/traces?orderBy=public.desc&fields=core&limit=100' | grep -c '\"public\":true'",
-        "Enforce Enterprise SSO for Your Verified Domain (Cloud) — Organization Settings > SSO > Verify Domain > Configure SSO > Enforced; verify: Organization Settings > SSO shows the domain as Enforced",
-        "Review Audit Logs on a Schedule — Organization Settings > Audit Logs > review on a schedule",
-        "Provision and Deprovision Users Through SCIM (point the IdP's SCIM provisioning at /api/public/scim with an organization key; the delete below is the offboarding step) — curl -u <org-public-key>:<org-secret-key> -X DELETE https://<langfuse-host>/api/public/scim/Users/<user-id>; verify: curl -u <org-public-key>:<org-secret-key> https://<langfuse-host>/api/public/scim/Users",
-        "Sign Up in the Cloud Data Region Your Residency Policy Allows — https://<region-host>/auth/sign-up; verify: printenv LANGFUSE_BASE_URL",
-        "Do Not Enable AI Features Until Approved — Organization Settings > General > AI Features > Enable AI powered features for your organization > Off",
-        "Turn Off AI Data Use for Product Improvement — Organization Settings > General > AI Features > AI Data Use for Product/Service Improvement > Off",
-        "Protect the Production Prompt Label — Project Settings > Protected Prompt Labels > add production and every label an application resolves",
-        "Disconnect Any Slack Workspace You Do Not Control — Project Settings > Integrations > Slack > disconnect any workspace you do not control",
-        "Review and Remove Unnecessary or Unrecognized Integrations — curl -u <public-key>:<secret-key> -X DELETE https://<langfuse-host>/api/public/integrations/blob-storage/<integration-id>; verify: curl -u <public-key>:<secret-key> https://<langfuse-host>/api/public/integrations/blob-storage",
-        "Send Webhook Credentials in Headers, Never in the URL — Prompts > Automations > Webhook > Headers > Authorization: Bearer <receiver-token>, nothing in the URL",
-        "Generate a Unique NEXTAUTH_SECRET, SALT and ENCRYPTION_KEY per Environment at Install (rotating SALT breaks every API key; rotating ENCRYPTION_KEY makes stored credentials unreadable) — helm install langfuse langfuse/langfuse -n <namespace> --set langfuse.salt.value=$(openssl rand -base64 32) --set langfuse.encryptionKey.value=$(openssl rand -hex 32) --set langfuse.nextauth.secret.value=$(openssl rand -base64 32); verify: kubectl exec deployment/langfuse-web -n <namespace> -- printenv ENCRYPTION_KEY | tr -d '\\n' | wc -c",
-        "Remove the Bootstrap Secrets After First Start (the init values are applied once; afterwards they only sit in the environment as live secrets) — kubectl set env deployment/langfuse-web deployment/langfuse-worker -n <namespace> LANGFUSE_INIT_USER_PASSWORD- LANGFUSE_INIT_PROJECT_SECRET_KEY- LANGFUSE_INIT_PROJECT_PUBLIC_KEY-; verify: kubectl exec deployment/langfuse-web -n <namespace> -- printenv | grep '^LANGFUSE_INIT_'",
-        "Set Data Retention at Provisioning — kubectl set env deployment/langfuse-web deployment/langfuse-worker -n <namespace> LANGFUSE_INIT_PROJECT_RETENTION=<days>; verify: kubectl exec deployment/langfuse-web -n <namespace> -- printenv LANGFUSE_INIT_PROJECT_RETENTION",
-        "Disable Open Sign-Up — kubectl set env deployment/langfuse-web -n <namespace> AUTH_DISABLE_SIGNUP=true; verify: kubectl exec deployment/langfuse-web -n <namespace> -- printenv AUTH_DISABLE_SIGNUP",
-        "Disable Email/Password When SSO Covers Everyone — kubectl set env deployment/langfuse-web -n <namespace> AUTH_DISABLE_USERNAME_PASSWORD=true; verify: kubectl exec deployment/langfuse-web -n <namespace> -- printenv AUTH_DISABLE_USERNAME_PASSWORD",
-        "Force SSO for Corporate Domains — kubectl set env deployment/langfuse-web -n <namespace> AUTH_DOMAINS_WITH_SSO_ENFORCEMENT=<domain>,<domain>; verify: kubectl exec deployment/langfuse-web -n <namespace> -- printenv AUTH_DOMAINS_WITH_SSO_ENFORCEMENT",
-        "Require Email Verification Where Password Auth Remains — kubectl set env deployment/langfuse-web -n <namespace> AUTH_EMAIL_VERIFICATION_REQUIRED=true; verify: kubectl exec deployment/langfuse-web -n <namespace> -- printenv AUTH_EMAIL_VERIFICATION_REQUIRED",
-        "Shorten the Session Lifetime — kubectl set env deployment/langfuse-web -n <namespace> AUTH_SESSION_MAX_AGE=<minutes>; verify: kubectl exec deployment/langfuse-web -n <namespace> -- printenv AUTH_SESSION_MAX_AGE",
-        "Do Not Enable Account Linking Unless the IdP Verifies Emails — kubectl set env deployment/langfuse-web -n <namespace> AUTH_<PROVIDER>_ALLOW_ACCOUNT_LINKING-; verify: kubectl exec deployment/langfuse-web -n <namespace> -- printenv | grep '^AUTH_.*_ALLOW_ACCOUNT_LINKING='",
-        "Pin the SSO Issuer — kubectl set env deployment/langfuse-web -n <namespace> AUTH_<PROVIDER>_ISSUER=https://<idp-issuer>; verify: kubectl exec deployment/langfuse-web -n <namespace> -- printenv | grep '^AUTH_.*_ISSUER='",
-        "Set Explicit OAuth Checks on Every SSO Provider — kubectl set env deployment/langfuse-web -n <namespace> AUTH_<PROVIDER>_CHECKS=pkce,state; verify: kubectl exec deployment/langfuse-web -n <namespace> -- printenv | grep '^AUTH_.*_CHECKS='",
-        "Limit Google Sign-In to Corporate Domains — kubectl set env deployment/langfuse-web -n <namespace> AUTH_GOOGLE_ALLOWED_DOMAINS=<domain>,<domain>; verify: kubectl exec deployment/langfuse-web -n <namespace> -- printenv AUTH_GOOGLE_ALLOWED_DOMAINS",
-        "Restrict Who Can Create Organizations — kubectl set env deployment/langfuse-web -n <namespace> LANGFUSE_ALLOWED_ORGANIZATION_CREATORS=<owner@domain>,<owner@domain>; verify: kubectl exec deployment/langfuse-web -n <namespace> -- printenv LANGFUSE_ALLOWED_ORGANIZATION_CREATORS",
-        "Set the Auto-Provisioned Default Roles to VIEWER — kubectl set env deployment/langfuse-web -n <namespace> LANGFUSE_DEFAULT_ORG_ROLE=VIEWER LANGFUSE_DEFAULT_PROJECT_ROLE=VIEWER; verify: kubectl exec deployment/langfuse-web -n <namespace> -- printenv | grep '^LANGFUSE_DEFAULT_'",
-        "Set a Server-Side Masking Callback — kubectl set env deployment/langfuse-web deployment/langfuse-worker -n <namespace> LANGFUSE_INGESTION_MASKING_CALLBACK_URL=https://<masking-service>/mask; verify: kubectl exec deployment/langfuse-worker -n <namespace> -- printenv LANGFUSE_INGESTION_MASKING_CALLBACK_URL",
-        "Set Masking to Fail Closed — kubectl set env deployment/langfuse-web deployment/langfuse-worker -n <namespace> LANGFUSE_INGESTION_MASKING_CALLBACK_FAIL_CLOSED=true; verify: kubectl exec deployment/langfuse-worker -n <namespace> -- printenv LANGFUSE_INGESTION_MASKING_CALLBACK_FAIL_CLOSED",
-        "Close the Legacy Ingestion Endpoint — kubectl set env deployment/langfuse-web deployment/langfuse-worker -n <namespace> LANGFUSE_MIGRATION_V4_WRITE_MODE-; verify: kubectl exec deployment/langfuse-web -n <namespace> -- printenv | grep '^LANGFUSE_MIGRATION_V4_WRITE_MODE='",
-        "Enforce HTTPS at the CSP Layer — kubectl set env deployment/langfuse-web -n <namespace> LANGFUSE_CSP_ENFORCE_HTTPS=true; verify: kubectl exec deployment/langfuse-web -n <namespace> -- printenv LANGFUSE_CSP_ENFORCE_HTTPS",
-        "Turn Off Telemetry (OSS) — kubectl set env deployment/langfuse-web deployment/langfuse-worker -n <namespace> TELEMETRY_ENABLED=false; verify: kubectl exec deployment/langfuse-web -n <namespace> -- printenv TELEMETRY_ENABLED",
-        "Do Not Set SSRF Allowlists Unless an Internal Target Is Required — kubectl set env deployment/langfuse-web deployment/langfuse-worker -n <namespace> $(kubectl exec deployment/langfuse-web -n <namespace> -- printenv | grep -oE '^LANGFUSE_[A-Z_]WHITELISTED[A-Z_]' | sed 's/$/-/'); verify: kubectl exec deployment/langfuse-web -n <namespace> -- printenv | grep 'WHITELISTED'",
-        "Never Run Code Evaluators In-Process — kubectl set env deployment/langfuse-web deployment/langfuse-worker -n <namespace> LANGFUSE_CODE_EVAL_DISPATCHER-; verify: kubectl exec deployment/langfuse-web -n <namespace> -- printenv | grep '^LANGFUSE_CODE_EVAL_DISPATCHER='",
-        "Generate a High-Entropy Admin API Key and Do Not Expose the Admin API Publicly — kubectl create secret generic langfuse-admin -n <namespace> --from-literal=ADMIN_API_KEY=$(openssl rand -base64 48) && kubectl set env deployment/langfuse-web -n <namespace> --from=secret/langfuse-admin; verify: kubectl exec deployment/langfuse-web -n <namespace> -- printenv ADMIN_API_KEY | tr -d '\\n' | wc -c",
-        "Sandbox or Disable the Assistant's Code Tools (or set LANGFUSE_IN_APP_AGENT_ENABLED=false) — kubectl set env deployment/langfuse-web deployment/langfuse-worker -n <namespace> LANGFUSE_IN_APP_AGENT_SANDBOX_PROVIDER=lambda-microvm LANGFUSE_IN_APP_AGENT_SANDBOX_AWS_LAMBDA_MICROVM_IMAGE_IDENTIFIER=<image-id> LANGFUSE_IN_APP_AGENT_SANDBOX_AWS_LAMBDA_MICROVM_EXECUTION_ROLE_ARN=<execution-role-arn> LANGFUSE_IN_APP_AGENT_SANDBOX_AWS_LAMBDA_MICROVM_REGION=<region> LANGFUSE_IN_APP_AGENT_SANDBOX_AWS_LAMBDA_MICROVM_EGRESS_NETWORK_CONNECTOR_ARN=<egress-connector-arn>; verify: kubectl exec deployment/langfuse-web -n <namespace> -- printenv | grep '^LANGFUSE_IN_APP_AGENT_'",
-        "Expose Only the Web Container — kubectl patch svc <service-that-is-not-langfuse-web> -n <namespace> -p '{\"spec\":{\"type\":\"ClusterIP\"}}'; verify: kubectl get svc -n <namespace>",
-        "Enable Encryption at Rest on Every Store — aws s3api put-bucket-encryption --bucket <event-upload-bucket> --server-side-encryption-configuration '{\"Rules\":[{\"ApplyServerSideEncryptionByDefault\":{\"SSEAlgorithm\":\"aws:kms\",\"KMSMasterKeyID\":\"<kms-key-arn>\"}}]}'; verify: aws s3api get-bucket-encryption --bucket <event-upload-bucket>",
-        "Grant the Retention Job Delete Rights on Every Bucket — aws iam put-role-policy --role-name <langfuse-role> --policy-name LangfuseRetentionDelete --policy-document '{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"s3:DeleteObject\",\"Resource\":\"arn:aws:s3:::<media-bucket>/\"}]}'; verify: aws iam simulate-principal-policy --policy-source-arn <langfuse-role-arn> --action-names s3:DeleteObject --resource-arns arn:aws:s3:::<media-bucket>/",
-        "Upgrade the Instance to the Latest Release — helm repo update && helm upgrade langfuse langfuse/langfuse -n <namespace> --reuse-values; verify: kubectl get deploy -n <namespace> -o jsonpath='{.items[].spec.template.spec.containers[].image}'"
+        "Assign Organization Roles at Least Privilege - pass: every organization member holds the lowest role their work needs, and only the named owners hold OWNER",
+        "Set Single-Project Users to NONE Plus a Project Role (the organization role NONE is set under Organization Settings > Members; the memberships API takes OWNER, ADMIN, MEMBER or VIEWER) - pass: a user who works in one project holds organization role NONE and a role on that project only",
+        "Set a Data Retention Window - pass: every project has Data Retention set to a day count no larger than your policy allows, not disabled",
+        "Review Project API Keys and Rotate Them on a Schedule - pass: every project API key has a note naming its service and environment and was created inside your rotation window",
+        "Revoke Organization-Scoped API Keys Not Used for Provisioning - pass: the only organization API keys are the ones your provisioning automation holds",
+        "Restrict Stored LLM Connections to Approved Endpoints - pass: every LLM connection's base URL is an approved provider or gateway",
+        "Unshare Public Traces That Are Not Safe to Publish - pass: no trace is public unless it was reviewed for publication",
+        "Enforce Enterprise SSO for Your Verified Domain (Cloud) - pass: the corporate domain is verified and its SSO connection is set to Enforced",
+        "Review Audit Logs on a Schedule - pass: an owner reviews the organization audit log at least monthly and records the review",
+        "Provision and Deprovision Users Through SCIM (point the IdP's SCIM provisioning at /api/public/scim with an organization key; the delete below is the offboarding step) - pass: membership is managed by the IdP's SCIM connector and no offboarded person remains in SCIM Users",
+        "Sign Up in the Cloud Data Region Your Residency Policy Allows - pass: the organization lives on the region host your residency policy allows and every SDK points at that host",
+        "Do Not Enable AI Features Until Approved - pass: Enable AI powered features for your organization is Off unless security approved it",
+        "Turn Off AI Data Use for Product Improvement - pass: AI Data Use for Product/Service Improvement is Off",
+        "Protect the Production Prompt Label - pass: production and every label an application resolves are protected labels",
+        "Disconnect Any Slack Workspace You Do Not Control - pass: the Slack integration is disconnected or connected only to your own workspace",
+        "Review and Remove Unnecessary or Unrecognized Integrations - pass: every integration (Slack, PostHog, blob storage export) is one your team set up on purpose",
+        "Send Webhook Credentials in Headers, Never in the URL - pass: every prompt automation webhook carries its token in a header and its URL has no secret in the query string",
+        "Generate a Unique NEXTAUTH_SECRET, SALT and ENCRYPTION_KEY per Environment at Install (rotating SALT breaks every API key; rotating ENCRYPTION_KEY makes stored credentials unreadable) - pass: each environment has its own random NEXTAUTH_SECRET, SALT and 64-hex-character ENCRYPTION_KEY",
+        "Remove the Bootstrap Secrets After First Start (the init values are applied once; afterwards they only sit in the environment as live secrets) - pass: no LANGFUSE_INIT_USER_PASSWORD, LANGFUSE_INIT_PROJECT_SECRET_KEY or LANGFUSE_INIT_PROJECT_PUBLIC_KEY is set on web or worker",
+        "Set Data Retention at Provisioning - pass: LANGFUSE_INIT_PROJECT_RETENTION is set to the day count your policy allows and the bootstrap project shows that retention",
+        "Disable Open Sign-Up - pass: AUTH_DISABLE_SIGNUP is true on the web deployment",
+        "Disable Email/Password When SSO Covers Everyone - pass: AUTH_DISABLE_USERNAME_PASSWORD is true once every user signs in through SSO",
+        "Force SSO for Corporate Domains - pass: AUTH_DOMAINS_WITH_SSO_ENFORCEMENT lists every corporate email domain",
+        "Require Email Verification Where Password Auth Remains - pass: AUTH_EMAIL_VERIFICATION_REQUIRED is true wherever password login is still enabled",
+        "Shorten the Session Lifetime - pass: AUTH_SESSION_MAX_AGE is set to the number of minutes your policy allows",
+        "Do Not Enable Account Linking Unless the IdP Verifies Emails - pass: no AUTH_<PROVIDER>_ALLOW_ACCOUNT_LINKING is true for a provider that does not verify email addresses",
+        "Pin the SSO Issuer - pass: every configured SSO provider has AUTH_<PROVIDER>_ISSUER set to your IdP's issuer URL",
+        "Set Explicit OAuth Checks on Every SSO Provider - pass: every configured SSO provider has AUTH_<PROVIDER>_CHECKS=pkce,state",
+        "Limit Google Sign-In to Corporate Domains - pass: AUTH_GOOGLE_ALLOWED_DOMAINS lists only your corporate domains when Google sign-in is enabled",
+        "Restrict Who Can Create Organizations - pass: LANGFUSE_ALLOWED_ORGANIZATION_CREATORS lists only the owners' addresses",
+        "Set the Auto-Provisioned Default Roles to VIEWER - pass: LANGFUSE_DEFAULT_ORG_ROLE and LANGFUSE_DEFAULT_PROJECT_ROLE are VIEWER",
+        "Set a Server-Side Masking Callback - pass: LANGFUSE_INGESTION_MASKING_CALLBACK_URL points at your masking service on both web and worker",
+        "Set Masking to Fail Closed - pass: LANGFUSE_INGESTION_MASKING_CALLBACK_FAIL_CLOSED is true on both web and worker",
+        "Close the Legacy Ingestion Endpoint - pass: LANGFUSE_MIGRATION_V4_WRITE_MODE is unset once every SDK is on the current ingestion path",
+        "Enforce HTTPS at the CSP Layer - pass: LANGFUSE_CSP_ENFORCE_HTTPS is true on the web deployment",
+        "Turn Off Telemetry (OSS) - pass: TELEMETRY_ENABLED is false on web and worker",
+        "Do Not Set SSRF Allowlists Unless an Internal Target Is Required - pass: no LANGFUSE_WHITELISTED variable is set unless a documented internal target needs it",
+        "Never Run Code Evaluators In-Process - pass: LANGFUSE_CODE_EVAL_DISPATCHER is unset or set to a sandboxed dispatcher",
+        "Generate a High-Entropy Admin API Key and Do Not Expose the Admin API Publicly - pass: ADMIN_API_KEY is at least 64 random characters and /api/admin is blocked at the ingress",
+        "Sandbox or Disable the Assistant's Code Tools (or set LANGFUSE_IN_APP_AGENT_ENABLED=false) - pass: the in-app agent is disabled, or its sandbox provider is lambda-microvm with image, role, region and egress connector set",
+        "Expose Only the Web Container - pass: langfuse-web is the only Service of type LoadBalancer or NodePort in the namespace",
+        "Enable Encryption at Rest on Every Store - pass: every bucket Langfuse writes to has default SSE-KMS encryption, and the database volumes are encrypted",
+        "Grant the Retention Job Delete Rights on Every Bucket - pass: the Langfuse role can s3:DeleteObject on the event, media and export buckets",
+        "Upgrade the Instance to the Latest Release - pass: web and worker run the image tag of the latest Langfuse release"
+      ],
+      "items": [
+        {
+          "title": "Assign Organization Roles at Least Privilege",
+          "pass": "every organization member holds the lowest role their work needs, and only the named owners hold `OWNER`",
+          "console": {
+            "verify": "Organization Settings > Members > Role column shows `OWNER` only for the named owners and `ADMIN`, `MEMBER` or `VIEWER` for everyone else",
+            "fix": "Organization Settings > Members > select the member > Role > choose the lowest role that fits > Save"
+          },
+          "cli": {
+            "verify": [
+              "curl -s -u $ORG_KEY $LANGFUSE_HOST/api/public/organizations/memberships"
+            ],
+            "fix": [
+              "curl -s -u $ORG_KEY -X PUT $LANGFUSE_HOST/api/public/organizations/memberships \\\n  -H 'Content-Type: application/json' -d '{\"userId\":\"<user-id>\",\"role\":\"VIEWER\"}'"
+            ],
+            "expect": "`memberships` lists `\"role\":\"OWNER\"` only for the named owners. An extra owner can delete the organization and every project in it."
+          }
+        },
+        {
+          "title": "Set Single-Project Users to NONE Plus a Project Role (the organization role NONE is set under Organization Settings > Members; the memberships API takes OWNER, ADMIN, MEMBER or VIEWER)",
+          "pass": "a user who works in one project holds organization role `NONE` and a role on that project only",
+          "console": {
+            "verify": "Organization Settings > Members > single-project users show Organization Role `NONE` and one entry under Project Roles",
+            "fix": "Organization Settings > Members > select the user > Organization Role > `NONE` > Save; then Project Settings > Members > Add member > choose the user > role `MEMBER` or `VIEWER` > Add"
+          },
+          "cli": {
+            "verify": [
+              "curl -s -u $ORG_KEY $LANGFUSE_HOST/api/public/organizations/memberships"
+            ],
+            "fix": [
+              "curl -s -u $ORG_KEY -X PUT $LANGFUSE_HOST/api/public/projects/<project-id>/memberships \\\n  -H 'Content-Type: application/json' -d '{\"userId\":\"<user-id>\",\"role\":\"MEMBER\"}'"
+            ],
+            "expect": "every single-project user is listed with `\"role\":\"NONE\"` at the organization level. An organization-level `MEMBER` reaches every project in the organization, including ones the user was never meant to see."
+          }
+        },
+        {
+          "title": "Set a Data Retention Window",
+          "pass": "every project has Data Retention set to a day count no larger than your policy allows, not disabled",
+          "console": {
+            "verify": "Project Settings > General > Data Retention shows a number of days within your policy, not disabled",
+            "fix": "Project Settings > General > Data Retention > enter the number of days > Save"
+          },
+          "cli": {
+            "verify": [
+              "curl -s -u $PROJECT_KEY $LANGFUSE_HOST/api/public/projects"
+            ],
+            "fix": [
+              "curl -s -u $ORG_KEY -X PUT $LANGFUSE_HOST/api/public/projects/<project-id> \\\n  -H 'Content-Type: application/json' -d '{\"name\":\"<project-name>\",\"retention\":30}'"
+            ],
+            "expect": "each project's `retentionDays` is a number within your policy, not `0` or absent. Traces kept forever hold prompts and outputs with customer data long after anyone needs them."
+          }
+        },
+        {
+          "title": "Review Project API Keys and Rotate Them on a Schedule",
+          "pass": "every project API key has a note naming its service and environment and was created inside your rotation window",
+          "console": {
+            "verify": "Project Settings > API Keys > every key shows a note naming a service and environment and a Created date inside the rotation window",
+            "fix": "Project Settings > API Keys > Create new API key > Note `<service>-<environment>-<date>` > Create > store the secret in the service's secret manager; then Project Settings > API Keys > select the old key > Delete > confirm"
+          },
+          "cli": {
+            "verify": [
+              "curl -s -u $ORG_KEY $LANGFUSE_HOST/api/public/projects/<project-id>/apiKeys"
+            ],
+            "fix": [
+              "curl -s -u $ORG_KEY -X POST $LANGFUSE_HOST/api/public/projects/<project-id>/apiKeys \\\n  -H 'Content-Type: application/json' -d '{\"note\":\"<service>-<environment>-<date>\"}'",
+              "curl -s -u $ORG_KEY -X DELETE $LANGFUSE_HOST/api/public/projects/<project-id>/apiKeys/<old-api-key-id>"
+            ],
+            "expect": "every key's `note` names a service and environment and its `createdAt` is inside the rotation window. A key nobody can attribute cannot be revoked with confidence when it leaks."
+          }
+        },
+        {
+          "title": "Revoke Organization-Scoped API Keys Not Used for Provisioning",
+          "pass": "the only organization API keys are the ones your provisioning automation holds",
+          "console": {
+            "verify": "Organization Settings > API Keys > every key's note names a provisioning system (IdP SCIM, Terraform, CI)",
+            "fix": "Organization Settings > API Keys > select the key > Delete > confirm"
+          },
+          "cli": {
+            "verify": [
+              "curl -s -u $ORG_KEY $LANGFUSE_HOST/api/public/organizations/apiKeys"
+            ],
+            "fix": [
+              "curl -s -u $ORG_KEY -X DELETE $LANGFUSE_HOST/api/public/organizations/apiKeys/<api-key-id>"
+            ],
+            "expect": "`apiKeys` lists only keys whose `note` names a provisioning system. An organization key can create projects, members and keys across the whole organization."
+          }
+        },
+        {
+          "title": "Restrict Stored LLM Connections to Approved Endpoints",
+          "pass": "every LLM connection's base URL is an approved provider or gateway",
+          "console": {
+            "verify": "Project Settings > LLM Connections > each connection's API Base URL is empty (provider default) or an approved gateway",
+            "fix": "Project Settings > LLM Connections > select the connection > Edit > API Base URL > enter the approved gateway URL > Save; delete any connection nobody approved"
+          },
+          "cli": {
+            "verify": [
+              "curl -s -u $PROJECT_KEY $LANGFUSE_HOST/api/public/llm-connections"
+            ],
+            "fix": [
+              "curl -s -u $PROJECT_KEY -X PUT $LANGFUSE_HOST/api/public/llm-connections \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"provider\":\"<provider-name>\",\"adapter\":\"openai\",\"secretKey\":\"<provider-key>\",\"baseURL\":\"https://<approved-gateway>/v1\"}'"
+            ],
+            "expect": "every entry's `baseURL` is null or an approved endpoint. A connection to an unknown host sends prompts, outputs and the provider key to a server you do not control."
+          }
+        },
+        {
+          "title": "Unshare Public Traces That Are Not Safe to Publish",
+          "pass": "no trace is public unless it was reviewed for publication",
+          "console": {
+            "verify": "Tracing > Traces > open the trace > the share control in the header shows the trace as private",
+            "fix": "Tracing > Traces > open the trace > share control > switch Public off"
+          },
+          "cli": {
+            "verify": [
+              "curl -s -u $PROJECT_KEY \"$LANGFUSE_HOST/api/public/traces?orderBy=public.desc&fields=core&limit=100\" \\\n  | grep -c '\"public\":true'"
+            ],
+            "expect": "`0`, or only the count of traces on the reviewed publication list. A public trace is readable by anyone holding the link, with no login."
+          }
+        },
+        {
+          "title": "Enforce Enterprise SSO for Your Verified Domain (Cloud)",
+          "pass": "the corporate domain is verified and its SSO connection is set to Enforced",
+          "console": {
+            "verify": "Organization Settings > SSO > the domain shows Verified and the connection shows Enforced",
+            "fix": "Organization Settings > SSO > Verify Domain > add the DNS record shown > Verify; then Configure SSO > enter the IdP details > set Enforced > Save"
+          }
+        },
+        {
+          "title": "Review Audit Logs on a Schedule",
+          "pass": "an owner reviews the organization audit log at least monthly and records the review",
+          "console": {
+            "verify": "Organization Settings > Audit Logs > entries since the last recorded review have been read, and the review date is in the security runbook",
+            "fix": "Organization Settings > Audit Logs > read every entry since the last review > record the date and findings in the security runbook > schedule the next review"
+          }
+        },
+        {
+          "title": "Provision and Deprovision Users Through SCIM (point the IdP's SCIM provisioning at /api/public/scim with an organization key; the delete below is the offboarding step)",
+          "pass": "membership is managed by the IdP's SCIM connector and no offboarded person remains in SCIM Users",
+          "console": {
+            "verify": "Organization Settings > Members > every member matches an active user in the IdP and nobody who has left is listed",
+            "fix": "Organization Settings > API Keys > Create new API key > Note `idp-scim` > Create; then in the IdP point SCIM provisioning at `$LANGFUSE_HOST/api/public/scim` with that key and assign the Langfuse app to the right groups"
+          },
+          "cli": {
+            "verify": [
+              "curl -s -u $ORG_KEY $LANGFUSE_HOST/api/public/scim/Users"
+            ],
+            "fix": [
+              "curl -s -u $ORG_KEY -X DELETE $LANGFUSE_HOST/api/public/scim/Users/<user-id>"
+            ],
+            "expect": "`Resources` lists only active employees. A member left behind after offboarding keeps reading traces and prompts."
+          }
+        },
+        {
+          "title": "Sign Up in the Cloud Data Region Your Residency Policy Allows",
+          "pass": "the organization lives on the region host your residency policy allows and every SDK points at that host",
+          "console": {
+            "verify": "Organization Settings > General > the browser address bar shows the allowed region host (`cloud.langfuse.com` for EU, `us.cloud.langfuse.com` for US, `hipaa.cloud.langfuse.com` for HIPAA)",
+            "fix": "`https://<region-host>/auth/sign-up` > create the organization in the allowed region > invite members > repoint every SDK > Organization Settings > General > Delete Organization on the wrong-region organization"
+          },
+          "cli": {
+            "verify": [
+              "printenv LANGFUSE_BASE_URL",
+              "printenv LANGFUSE_HOST"
+            ],
+            "expect": "the printed host is the allowed region host. Traces sent to another region leave the jurisdiction your policy promised customers."
+          }
+        },
+        {
+          "title": "Do Not Enable AI Features Until Approved",
+          "pass": "`Enable AI powered features for your organization` is Off unless security approved it",
+          "console": {
+            "verify": "Organization Settings > General > AI Features > `Enable AI powered features for your organization` is Off",
+            "fix": "Organization Settings > General > AI Features > switch `Enable AI powered features for your organization` Off > Save"
+          }
+        },
+        {
+          "title": "Turn Off AI Data Use for Product Improvement",
+          "pass": "`AI Data Use for Product/Service Improvement` is Off",
+          "console": {
+            "verify": "Organization Settings > General > AI Features > `AI Data Use for Product/Service Improvement` is Off",
+            "fix": "Organization Settings > General > AI Features > switch `AI Data Use for Product/Service Improvement` Off > Save"
+          }
+        },
+        {
+          "title": "Protect the Production Prompt Label",
+          "pass": "`production` and every label an application resolves are protected labels",
+          "console": {
+            "verify": "Project Settings > Protected Prompt Labels > the list contains `production` and every label applications resolve",
+            "fix": "Project Settings > Protected Prompt Labels > Add label > `production` > Save; repeat for every label applications resolve"
+          }
+        },
+        {
+          "title": "Disconnect Any Slack Workspace You Do Not Control",
+          "pass": "the Slack integration is disconnected or connected only to your own workspace",
+          "console": {
+            "verify": "Project Settings > Integrations > Slack > shows Not connected or the name of your own workspace",
+            "fix": "Project Settings > Integrations > Slack > Disconnect > confirm"
+          }
+        },
+        {
+          "title": "Review and Remove Unnecessary or Unrecognized Integrations",
+          "pass": "every integration (Slack, PostHog, blob storage export) is one your team set up on purpose",
+          "console": {
+            "verify": "Project Settings > Integrations > each integration shows Not connected or a destination your team owns",
+            "fix": "Project Settings > Integrations > open the integration > Disconnect or Delete > confirm"
+          },
+          "cli": {
+            "verify": [
+              "curl -s -u $PROJECT_KEY $LANGFUSE_HOST/api/public/integrations/blob-storage"
+            ],
+            "fix": [
+              "curl -s -u $PROJECT_KEY -X DELETE $LANGFUSE_HOST/api/public/integrations/blob-storage/<integration-id>"
+            ],
+            "expect": "`data` lists only exports to buckets you own. An export to a foreign bucket copies every trace out of the project on a schedule."
+          }
+        },
+        {
+          "title": "Send Webhook Credentials in Headers, Never in the URL",
+          "pass": "every prompt automation webhook carries its token in a header and its URL has no secret in the query string",
+          "console": {
+            "verify": "Prompts > Automations > open each webhook > the URL contains no token or key and Headers holds `Authorization: Bearer <receiver-token>`",
+            "fix": "Prompts > Automations > open the webhook > Edit > remove the secret from the URL > Headers > add `Authorization` with the bearer token > Save"
+          }
+        },
+        {
+          "title": "Generate a Unique NEXTAUTH_SECRET, SALT and ENCRYPTION_KEY per Environment at Install (rotating SALT breaks every API key; rotating ENCRYPTION_KEY makes stored credentials unreadable)",
+          "pass": "each environment has its own random `NEXTAUTH_SECRET`, `SALT` and 64-hex-character `ENCRYPTION_KEY`",
+          "cli": {
+            "verify": [
+              "kubectl exec deployment/langfuse-web -n $NS -- sh -c \\\n  'for v in ENCRYPTION_KEY SALT NEXTAUTH_SECRET; do printf \"%s=\" $v; printenv $v | tr -d \"\\n\" | wc -c; done'"
+            ],
+            "fix": [
+              "helm install langfuse langfuse/langfuse -n $NS \\\n  --set langfuse.salt.value=$(openssl rand -base64 32) \\\n  --set langfuse.encryptionKey.value=$(openssl rand -hex 32) \\\n  --set langfuse.nextauth.secret.value=$(openssl rand -base64 32)"
+            ],
+            "expect": "`ENCRYPTION_KEY=64` and at least `32` for the other two, with values that differ from every other environment. A shared or default secret lets a leak in staging forge sessions and decrypt credentials in production."
+          }
+        },
+        {
+          "title": "Remove the Bootstrap Secrets After First Start (the init values are applied once; afterwards they only sit in the environment as live secrets)",
+          "pass": "no `LANGFUSE_INIT_USER_PASSWORD`, `LANGFUSE_INIT_PROJECT_SECRET_KEY` or `LANGFUSE_INIT_PROJECT_PUBLIC_KEY` is set on web or worker",
+          "cli": {
+            "verify": [
+              "kubectl exec deployment/langfuse-web -n $NS -- printenv | grep -E '^LANGFUSE_INIT_(USER_PASSWORD|PROJECT_SECRET_KEY|PROJECT_PUBLIC_KEY)='"
+            ],
+            "fix": [
+              "kubectl set env deployment/langfuse-web deployment/langfuse-worker -n $NS \\\n  LANGFUSE_INIT_USER_PASSWORD- LANGFUSE_INIT_PROJECT_SECRET_KEY- LANGFUSE_INIT_PROJECT_PUBLIC_KEY-"
+            ],
+            "expect": "no output. The init password and project keys stay valid credentials for as long as they sit in the environment."
+          }
+        },
+        {
+          "title": "Set Data Retention at Provisioning",
+          "pass": "`LANGFUSE_INIT_PROJECT_RETENTION` is set to the day count your policy allows and the bootstrap project shows that retention",
+          "console": {
+            "verify": "Project Settings > General > Data Retention shows the day count your policy allows",
+            "fix": "Project Settings > General > Data Retention > enter the number of days > Save"
+          },
+          "cli": {
+            "verify": [
+              "kubectl exec deployment/langfuse-web -n $NS -- printenv LANGFUSE_INIT_PROJECT_RETENTION",
+              "curl -s -u $PROJECT_KEY $LANGFUSE_HOST/api/public/projects"
+            ],
+            "fix": [
+              "kubectl set env deployment/langfuse-web deployment/langfuse-worker -n $NS LANGFUSE_INIT_PROJECT_RETENTION=<days>"
+            ],
+            "expect": "the variable prints the allowed day count and the project's `retentionDays` matches it. A project created without retention keeps every trace until someone remembers to set it."
+          }
+        },
+        {
+          "title": "Disable Open Sign-Up",
+          "pass": "`AUTH_DISABLE_SIGNUP` is `true` on the web deployment",
+          "cli": {
+            "verify": [
+              "kubectl exec deployment/langfuse-web -n $NS -- printenv AUTH_DISABLE_SIGNUP"
+            ],
+            "fix": [
+              "kubectl set env deployment/langfuse-web -n $NS AUTH_DISABLE_SIGNUP=true"
+            ],
+            "expect": "`true`. With sign-up open, anyone who can reach the host creates an account and, if organization creation is unrestricted, an organization."
+          }
+        },
+        {
+          "title": "Disable Email/Password When SSO Covers Everyone",
+          "pass": "`AUTH_DISABLE_USERNAME_PASSWORD` is `true` once every user signs in through SSO",
+          "cli": {
+            "verify": [
+              "kubectl exec deployment/langfuse-web -n $NS -- printenv AUTH_DISABLE_USERNAME_PASSWORD"
+            ],
+            "fix": [
+              "kubectl set env deployment/langfuse-web -n $NS AUTH_DISABLE_USERNAME_PASSWORD=true"
+            ],
+            "expect": "`true`. A password login left beside SSO bypasses the IdP's MFA and offboarding."
+          }
+        },
+        {
+          "title": "Force SSO for Corporate Domains",
+          "pass": "`AUTH_DOMAINS_WITH_SSO_ENFORCEMENT` lists every corporate email domain",
+          "cli": {
+            "verify": [
+              "kubectl exec deployment/langfuse-web -n $NS -- printenv AUTH_DOMAINS_WITH_SSO_ENFORCEMENT"
+            ],
+            "fix": [
+              "kubectl set env deployment/langfuse-web -n $NS AUTH_DOMAINS_WITH_SSO_ENFORCEMENT=<domain>,<domain>"
+            ],
+            "expect": "a comma-separated list containing every corporate domain. A corporate address that can still log in with a password sidesteps the IdP."
+          }
+        },
+        {
+          "title": "Require Email Verification Where Password Auth Remains",
+          "pass": "`AUTH_EMAIL_VERIFICATION_REQUIRED` is `true` wherever password login is still enabled",
+          "cli": {
+            "verify": [
+              "kubectl exec deployment/langfuse-web -n $NS -- printenv AUTH_EMAIL_VERIFICATION_REQUIRED"
+            ],
+            "fix": [
+              "kubectl set env deployment/langfuse-web -n $NS AUTH_EMAIL_VERIFICATION_REQUIRED=true"
+            ],
+            "expect": "`true`. Without verification an attacker registers with a colleague's address and receives invitations meant for them."
+          }
+        },
+        {
+          "title": "Shorten the Session Lifetime",
+          "pass": "`AUTH_SESSION_MAX_AGE` is set to the number of minutes your policy allows",
+          "cli": {
+            "verify": [
+              "kubectl exec deployment/langfuse-web -n $NS -- printenv AUTH_SESSION_MAX_AGE"
+            ],
+            "fix": [
+              "kubectl set env deployment/langfuse-web -n $NS AUTH_SESSION_MAX_AGE=<minutes>"
+            ],
+            "expect": "the number of minutes your policy allows, not empty. The default session lasts 30 days, so a stolen cookie works for a month."
+          }
+        },
+        {
+          "title": "Do Not Enable Account Linking Unless the IdP Verifies Emails",
+          "pass": "no `AUTH_<PROVIDER>_ALLOW_ACCOUNT_LINKING` is `true` for a provider that does not verify email addresses",
+          "cli": {
+            "verify": [
+              "kubectl exec deployment/langfuse-web -n $NS -- printenv | grep '^AUTH_.*_ALLOW_ACCOUNT_LINKING='"
+            ],
+            "fix": [
+              "kubectl set env deployment/langfuse-web -n $NS AUTH_<PROVIDER>_ALLOW_ACCOUNT_LINKING-"
+            ],
+            "expect": "no output, or `true` only for providers that verify email. Linking on an unverified email lets a new IdP account take over an existing user by matching their address."
+          }
+        },
+        {
+          "title": "Pin the SSO Issuer",
+          "pass": "every configured SSO provider has `AUTH_<PROVIDER>_ISSUER` set to your IdP's issuer URL",
+          "cli": {
+            "verify": [
+              "kubectl exec deployment/langfuse-web -n $NS -- printenv | grep '^AUTH_.*_ISSUER='"
+            ],
+            "fix": [
+              "kubectl set env deployment/langfuse-web -n $NS AUTH_<PROVIDER>_ISSUER=https://<idp-issuer>"
+            ],
+            "expect": "one line per provider, each ending in your own issuer URL. Without a pinned issuer a token from any tenant of the same IdP product is accepted."
+          }
+        },
+        {
+          "title": "Set Explicit OAuth Checks on Every SSO Provider",
+          "pass": "every configured SSO provider has `AUTH_<PROVIDER>_CHECKS=pkce,state`",
+          "cli": {
+            "verify": [
+              "kubectl exec deployment/langfuse-web -n $NS -- printenv | grep '^AUTH_.*_CHECKS='"
+            ],
+            "fix": [
+              "kubectl set env deployment/langfuse-web -n $NS AUTH_<PROVIDER>_CHECKS=pkce,state"
+            ],
+            "expect": "one line per provider, each set to `pkce,state`. Without PKCE and state the authorization code can be intercepted or replayed."
+          }
+        },
+        {
+          "title": "Limit Google Sign-In to Corporate Domains",
+          "pass": "`AUTH_GOOGLE_ALLOWED_DOMAINS` lists only your corporate domains when Google sign-in is enabled",
+          "cli": {
+            "verify": [
+              "kubectl exec deployment/langfuse-web -n $NS -- printenv AUTH_GOOGLE_ALLOWED_DOMAINS"
+            ],
+            "fix": [
+              "kubectl set env deployment/langfuse-web -n $NS AUTH_GOOGLE_ALLOWED_DOMAINS=<domain>,<domain>"
+            ],
+            "expect": "a comma-separated list of your corporate domains. Without it any Google account, personal ones included, can sign in."
+          }
+        },
+        {
+          "title": "Restrict Who Can Create Organizations",
+          "pass": "`LANGFUSE_ALLOWED_ORGANIZATION_CREATORS` lists only the owners' addresses",
+          "cli": {
+            "verify": [
+              "kubectl exec deployment/langfuse-web -n $NS -- printenv LANGFUSE_ALLOWED_ORGANIZATION_CREATORS"
+            ],
+            "fix": [
+              "kubectl set env deployment/langfuse-web -n $NS LANGFUSE_ALLOWED_ORGANIZATION_CREATORS=<owner@domain>,<owner@domain>"
+            ],
+            "expect": "a comma-separated list of owner addresses. Otherwise every user can create organizations and become an owner of their own."
+          }
+        },
+        {
+          "title": "Set the Auto-Provisioned Default Roles to VIEWER",
+          "pass": "`LANGFUSE_DEFAULT_ORG_ROLE` and `LANGFUSE_DEFAULT_PROJECT_ROLE` are `VIEWER`",
+          "cli": {
+            "verify": [
+              "kubectl exec deployment/langfuse-web -n $NS -- printenv | grep '^LANGFUSE_DEFAULT_'"
+            ],
+            "fix": [
+              "kubectl set env deployment/langfuse-web -n $NS LANGFUSE_DEFAULT_ORG_ROLE=VIEWER LANGFUSE_DEFAULT_PROJECT_ROLE=VIEWER"
+            ],
+            "expect": "both `LANGFUSE_DEFAULT_ORG_ROLE=VIEWER` and `LANGFUSE_DEFAULT_PROJECT_ROLE=VIEWER`. A higher default hands every auto-provisioned SSO user write access on day one."
+          }
+        },
+        {
+          "title": "Set a Server-Side Masking Callback",
+          "pass": "`LANGFUSE_INGESTION_MASKING_CALLBACK_URL` points at your masking service on both web and worker",
+          "cli": {
+            "verify": [
+              "kubectl exec deployment/langfuse-worker -n $NS -- printenv LANGFUSE_INGESTION_MASKING_CALLBACK_URL"
+            ],
+            "fix": [
+              "kubectl set env deployment/langfuse-web deployment/langfuse-worker -n $NS \\\n  LANGFUSE_INGESTION_MASKING_CALLBACK_URL=https://<masking-service>/mask"
+            ],
+            "expect": "`https://<masking-service>/mask`. Without server-side masking, every SDK that forgets client-side masking writes raw PII into traces."
+          }
+        },
+        {
+          "title": "Set Masking to Fail Closed",
+          "pass": "`LANGFUSE_INGESTION_MASKING_CALLBACK_FAIL_CLOSED` is `true` on both web and worker",
+          "cli": {
+            "verify": [
+              "kubectl exec deployment/langfuse-worker -n $NS -- printenv LANGFUSE_INGESTION_MASKING_CALLBACK_FAIL_CLOSED"
+            ],
+            "fix": [
+              "kubectl set env deployment/langfuse-web deployment/langfuse-worker -n $NS \\\n  LANGFUSE_INGESTION_MASKING_CALLBACK_FAIL_CLOSED=true"
+            ],
+            "expect": "`true`. Failing open stores unmasked events whenever the masking service is down."
+          }
+        },
+        {
+          "title": "Close the Legacy Ingestion Endpoint",
+          "pass": "`LANGFUSE_MIGRATION_V4_WRITE_MODE` is unset once every SDK is on the current ingestion path",
+          "cli": {
+            "verify": [
+              "kubectl exec deployment/langfuse-web -n $NS -- printenv | grep '^LANGFUSE_MIGRATION_V4_WRITE_MODE='"
+            ],
+            "fix": [
+              "kubectl set env deployment/langfuse-web deployment/langfuse-worker -n $NS LANGFUSE_MIGRATION_V4_WRITE_MODE-"
+            ],
+            "expect": "no output. The legacy write path skips the masking callback and keeps a second, unhardened way to write traces."
+          }
+        },
+        {
+          "title": "Enforce HTTPS at the CSP Layer",
+          "pass": "`LANGFUSE_CSP_ENFORCE_HTTPS` is `true` on the web deployment",
+          "cli": {
+            "verify": [
+              "kubectl exec deployment/langfuse-web -n $NS -- printenv LANGFUSE_CSP_ENFORCE_HTTPS"
+            ],
+            "fix": [
+              "kubectl set env deployment/langfuse-web -n $NS LANGFUSE_CSP_ENFORCE_HTTPS=true"
+            ],
+            "expect": "`true`. Without it a page loaded over plain HTTP sends session cookies in clear text."
+          }
+        },
+        {
+          "title": "Turn Off Telemetry (OSS)",
+          "pass": "`TELEMETRY_ENABLED` is `false` on web and worker",
+          "cli": {
+            "verify": [
+              "kubectl exec deployment/langfuse-web -n $NS -- printenv TELEMETRY_ENABLED"
+            ],
+            "fix": [
+              "kubectl set env deployment/langfuse-web deployment/langfuse-worker -n $NS TELEMETRY_ENABLED=false"
+            ],
+            "expect": "`false`. Telemetry reports usage from your instance to a third party your data policy may not cover."
+          }
+        },
+        {
+          "title": "Do Not Set SSRF Allowlists Unless an Internal Target Is Required",
+          "pass": "no `LANGFUSE_*WHITELISTED*` variable is set unless a documented internal target needs it",
+          "cli": {
+            "verify": [
+              "kubectl exec deployment/langfuse-web -n $NS -- printenv | grep 'WHITELISTED'"
+            ],
+            "fix": [
+              "kubectl set env deployment/langfuse-web deployment/langfuse-worker -n $NS <whitelist-variable>-"
+            ],
+            "expect": "no output, or only the variables named in your documented exception. An allowlisted internal range lets a crafted webhook or LLM base URL reach services inside the cluster."
+          }
+        },
+        {
+          "title": "Never Run Code Evaluators In-Process",
+          "pass": "`LANGFUSE_CODE_EVAL_DISPATCHER` is unset or set to a sandboxed dispatcher",
+          "cli": {
+            "verify": [
+              "kubectl exec deployment/langfuse-web -n $NS -- printenv | grep '^LANGFUSE_CODE_EVAL_DISPATCHER='"
+            ],
+            "fix": [
+              "kubectl set env deployment/langfuse-web deployment/langfuse-worker -n $NS LANGFUSE_CODE_EVAL_DISPATCHER-"
+            ],
+            "expect": "no output, or a sandboxed dispatcher named in your runbook. An in-process evaluator runs user-authored code inside the Langfuse container with its secrets."
+          }
+        },
+        {
+          "title": "Generate a High-Entropy Admin API Key and Do Not Expose the Admin API Publicly",
+          "pass": "`ADMIN_API_KEY` is at least 64 random characters and `/api/admin` is blocked at the ingress",
+          "cli": {
+            "verify": [
+              "kubectl exec deployment/langfuse-web -n $NS -- printenv ADMIN_API_KEY | tr -d '\\n' | wc -c",
+              "curl -s -o /dev/null -w '%{http_code}' $LANGFUSE_HOST/api/admin/organizations"
+            ],
+            "fix": [
+              "kubectl create secret generic langfuse-admin -n $NS --from-literal=ADMIN_API_KEY=$(openssl rand -base64 48) && \\\n  kubectl set env deployment/langfuse-web -n $NS --from=secret/langfuse-admin"
+            ],
+            "expect": "a length of at least `64`, and `403` or `404` from outside the network rather than `401`. A guessable or reachable admin key controls every organization on the instance."
+          }
+        },
+        {
+          "title": "Sandbox or Disable the Assistant's Code Tools (or set LANGFUSE_IN_APP_AGENT_ENABLED=false)",
+          "pass": "the in-app agent is disabled, or its sandbox provider is `lambda-microvm` with image, role, region and egress connector set",
+          "cli": {
+            "verify": [
+              "kubectl exec deployment/langfuse-web -n $NS -- printenv | grep '^LANGFUSE_IN_APP_AGENT_'"
+            ],
+            "fix": [
+              "kubectl set env deployment/langfuse-web deployment/langfuse-worker -n $NS LANGFUSE_IN_APP_AGENT_ENABLED=false",
+              "kubectl set env deployment/langfuse-web deployment/langfuse-worker -n $NS \\\n  LANGFUSE_IN_APP_AGENT_SANDBOX_PROVIDER=lambda-microvm \\\n  LANGFUSE_IN_APP_AGENT_SANDBOX_AWS_LAMBDA_MICROVM_IMAGE_IDENTIFIER=<image-id> \\\n  LANGFUSE_IN_APP_AGENT_SANDBOX_AWS_LAMBDA_MICROVM_EXECUTION_ROLE_ARN=<execution-role-arn> \\\n  LANGFUSE_IN_APP_AGENT_SANDBOX_AWS_LAMBDA_MICROVM_REGION=<region> \\\n  LANGFUSE_IN_APP_AGENT_SANDBOX_AWS_LAMBDA_MICROVM_EGRESS_NETWORK_CONNECTOR_ARN=<egress-connector-arn>"
+            ],
+            "expect": "`LANGFUSE_IN_APP_AGENT_ENABLED=false`, or `LANGFUSE_IN_APP_AGENT_SANDBOX_PROVIDER=lambda-microvm` together with the image, execution role, region and egress connector variables. Unsandboxed code tools run model-written code inside the application."
+          }
+        },
+        {
+          "title": "Expose Only the Web Container",
+          "pass": "`langfuse-web` is the only Service of type `LoadBalancer` or `NodePort` in the namespace",
+          "cli": {
+            "verify": [
+              "kubectl get svc -n $NS"
+            ],
+            "fix": [
+              "kubectl patch svc <service-that-is-not-langfuse-web> -n $NS -p '{\"spec\":{\"type\":\"ClusterIP\"}}'"
+            ],
+            "expect": "every Service except `langfuse-web` shows `ClusterIP`. An exposed worker, Postgres, ClickHouse, Redis or MinIO is reachable without any Langfuse authentication."
+          }
+        },
+        {
+          "title": "Enable Encryption at Rest on Every Store",
+          "pass": "every bucket Langfuse writes to has default SSE-KMS encryption, and the database volumes are encrypted",
+          "console": {
+            "verify": "S3 > Buckets > `<event-upload-bucket>` > Properties > Default encryption shows `SSE-KMS` with your key; repeat for the media and export buckets",
+            "fix": "S3 > Buckets > `<event-upload-bucket>` > Properties > Default encryption > Edit > `SSE-KMS` > choose the key > Save changes"
+          },
+          "cli": {
+            "verify": [
+              "aws s3api get-bucket-encryption --bucket <event-upload-bucket>"
+            ],
+            "fix": [
+              "aws s3api put-bucket-encryption --bucket <event-upload-bucket> --server-side-encryption-configuration \\\n  '{\"Rules\":[{\"ApplyServerSideEncryptionByDefault\":{\"SSEAlgorithm\":\"aws:kms\",\"KMSMasterKeyID\":\"<kms-key-arn>\"}}]}'"
+            ],
+            "expect": "`SSEAlgorithm` is `aws:kms` with your `KMSMasterKeyID`. Unencrypted buckets hand every raw event and media upload to whoever obtains the storage credentials."
+          }
+        },
+        {
+          "title": "Grant the Retention Job Delete Rights on Every Bucket",
+          "pass": "the Langfuse role can `s3:DeleteObject` on the event, media and export buckets",
+          "console": {
+            "verify": "IAM > Roles > `<langfuse-role>` > Permissions > a policy allows `s3:DeleteObject` on every bucket Langfuse writes to",
+            "fix": "IAM > Roles > `<langfuse-role>` > Permissions > Add permissions > Create inline policy > JSON > allow `s3:DeleteObject` on `arn:aws:s3:::<media-bucket>/*` and the other buckets > Next > name `LangfuseRetentionDelete` > Create policy"
+          },
+          "cli": {
+            "verify": [
+              "aws iam simulate-principal-policy --policy-source-arn <langfuse-role-arn> --action-names s3:DeleteObject \\\n  --resource-arns arn:aws:s3:::<media-bucket>/* --query 'EvaluationResults[].EvalDecision' --output text"
+            ],
+            "fix": [
+              "aws iam put-role-policy --role-name <langfuse-role> --policy-name LangfuseRetentionDelete --policy-document \\\n  '{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"s3:DeleteObject\",\"Resource\":\"arn:aws:s3:::<media-bucket>/*\"}]}'"
+            ],
+            "expect": "`allowed`. Without delete rights the retention job silently leaves expired traces and media in the buckets."
+          }
+        },
+        {
+          "title": "Upgrade the Instance to the Latest Release",
+          "pass": "web and worker run the image tag of the latest Langfuse release",
+          "cli": {
+            "verify": [
+              "kubectl get deploy -n $NS -o jsonpath='{.items[*].spec.template.spec.containers[*].image}'",
+              "helm search repo langfuse/langfuse --output json"
+            ],
+            "fix": [
+              "helm repo update && helm upgrade langfuse langfuse/langfuse -n $NS --reuse-values"
+            ],
+            "expect": "the running image tag equals the chart's current `app_version`. An old release misses security fixes that are public in the changelog."
+          }
+        }
       ]
     },
     {
