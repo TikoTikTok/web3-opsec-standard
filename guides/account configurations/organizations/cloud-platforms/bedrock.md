@@ -5,6 +5,7 @@ scope: ORGANIZATION
 -->
 
 <div align="center">
+  <img src="../../../../images/guides/bedrock.svg" alt="Amazon Bedrock Logo" width="64" height="64">
   <h2><a href="https://aws.amazon.com/bedrock/" target="_blank" rel="noopener noreferrer">Amazon Bedrock</a> Configuration Guide</h2>
   <p><em>Identity, Network, Logging, Guardrail and Agent controls for Amazon Bedrock accounts</em></p>
 </div>
