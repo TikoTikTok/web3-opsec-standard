@@ -14,14 +14,7 @@ scope: ORGANIZATION
 
 ## How to Use This Guide
 
-Every checklist item below states its **pass condition** on the item line itself, then gives one block for each channel you can use to check and fix it:
-
-- **Console** - a click path through the Google Cloud console (or the Google Workspace / Cloud Identity admin console for identity items). **Verify** is the full path to the page, ending with what to read and the value that passes. **Fix** is the full path to the action that remediates it.
-- **CLI** - **Verify** is the command that collects the current state, one line per command; copy it as-is and replace only the `<placeholders>`. **Expect** is the exact output, field or value that counts as a pass, and why the failing state matters. **Fix** is the command that remediates it; where an item has no CLI fix, use the Console fix.
-
-The condition is repeated on the item line so the control stays self-contained wherever the checklist is consumed as a flat list of items.
-
-An item is only complete when the **Expect** line (or the Console **Verify** value) holds for *every* resource the check returns, not just the first one.
+Each item states its **pass** condition, then gives **Console** (the Google Cloud or Admin console) and **CLI** (`gcloud`) steps to **Verify** and **Fix** it. Under CLI, **Expect** is the output that means it passes. Pick the channel you work in at the top of the guide; an item shows only the channels that can check or change the setting, and it passes only when every resource the command returns meets the condition.
 
 #### Prerequisites
 

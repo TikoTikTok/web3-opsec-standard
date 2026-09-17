@@ -13,14 +13,7 @@ scope: ORGANIZATION
 
 ## How to Use This Guide
 
-Every checklist item below states its **pass condition** on the item line itself, then gives up to two channels for checking and fixing it:
-
-- **Console** - the AWS Management Console. **Verify** is the full click path from the console's top-level service name, ending in the value to read and what counts as a pass. **Fix** is the full click path ending in the action to take.
-- **CLI** - AWS CLI v2 (`aws`). **Verify** lines are the commands that collect the current state, one per line; copy them as-is and replace only the `<placeholders>`. **Expect** is the exact output that counts as a pass and why the failing state matters. **Fix** is the command that remediates it, where one exists.
-
-An item lists only the channels that can genuinely check or change the setting. The condition is repeated on the item line so the control stays self-contained wherever the checklist is consumed as a flat list of items.
-
-An item is only complete when **Expect** holds for *every* resource the command returns, not just the first one.
+Each item states its **pass** condition, then gives **Console** (the AWS Management Console) and **CLI** (the AWS CLI) steps to **Verify** and **Fix** it. Under CLI, **Expect** is the output that means it passes. Pick the channel you work in at the top of the guide; an item shows only the channels that can check or change the setting, and it passes only when every resource the command returns meets the condition.
 
 #### Prerequisites
 
