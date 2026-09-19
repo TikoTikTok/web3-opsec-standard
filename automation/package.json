@@ -26,10 +26,7 @@
   },
   "overrides": {
     "mailparser": {
-      "nodemailer": "9.1.1"
-    },
-    "nodemailer": {
-      "nodemailer": "9.1.1"
+      "nodemailer": "^9.1.1"
     }
   }
 }
