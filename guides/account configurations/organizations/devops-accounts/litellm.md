@@ -135,7 +135,7 @@ Each item states its **pass** condition, then gives **Console** (the LiteLLM Adm
 - [ ] **Create a Personal Proxy Admin Account for Every Administrator** - pass: every administrator has a `proxy_admin` user with their own email, and the shared environment login is used for recovery only
   - **Console**:
     - Verify: Admin UI > Internal Users > Users > Global Proxy Role column shows `Admin (All Permissions)` for each named administrator, not only for `default_user_id`
-    - Fix: Admin UI > Internal Users > + Invite User > User Email > Global Proxy Role `Admin (All Permissions)` > tick `Send invitation email` > Invite User
+    - Fix: Admin UI > Internal Users > + Invite User > User Email > Global Proxy Role `Admin (All Permissions)` > tick `Send invitation email` only if SSO is off > Invite User
   - **CLI**:
     - Verify:
       ```bash
@@ -145,7 +145,7 @@ Each item states its **pass** condition, then gives **Console** (the LiteLLM Adm
     - Fix:
       ```bash
       curl -s -X POST -H "Authorization: Bearer $MASTER_KEY" -H 'Content-Type: application/json' $LITELLM_HOST/user/new \
-        -d '{"user_email":"<admin-email>","user_role":"proxy_admin","auto_create_key":false,"send_invite_email":true}'
+        -d '{"user_email":"<admin-email>","user_role":"proxy_admin","auto_create_key":false,"send_invite_email":<true-only-if-SSO-is-off>}'
       ```
 
 - [ ] **Set a UI Username and a UI Password That Is Not the Master Key** - pass: `UI_USERNAME` is not `admin` and `UI_PASSWORD` is set from a Secret to a value that differs from the master key

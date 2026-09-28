@@ -210,7 +210,8 @@ Each item states its **pass** condition, then gives **CLI** steps (`systemctl` a
     - Expect: from the first command, `default_server` on exactly one line, the one that also carries `server_name <proxy-host>` and `proxy_pass http://127.0.0.1:11434`, no other line naming `11434`, and no `listen` naming an address; nginx routes a request on its Host header, and a Host no `server_name` matches goes to the default server for the port, so without this the second probe below is answered by another server block, and any other block that reaches `11434`, such as the vendor FAQ's `listen 80` example left in `sites-enabled/`, forwards every path on its own port where the loop below does not look. From the loop, every line ends in `403 403`, answered by the proxy itself; the second probe sends `Host: localhost:11434`, which a loopback-bound Ollama accepts, so a proxy that passes the client's Host header through cannot hide behind Ollama's own `403` for a foreign host; the last path is new on every run and no Ollama route serves it, so a `404` in either column means the proxy forwards paths it does not name. Every path the proxy forwards is unauthenticated on Ollama, so an open `/api/pull` or `/api/create` is model tampering from the internet.
     - Fix:
       ```bash
-      printf 'server { listen 443 ssl default_server; server_name <proxy-host>; ssl_certificate <cert.pem>; ssl_certificate_key <key.pem>; location ~ ^/(api/(chat|generate|embed|embeddings|tags|show|version)|v1/) { proxy_pass http://127.0.0.1:11434; proxy_set_header Host localhost:11434; } location / { return 403; } }\n' | \
+      auth=''; [ -f /etc/nginx/conf.d/ollama-auth.conf ] && auth='if ($ollama_authorized = 0) { return 401; } '
+      printf 'server { listen 443 ssl default_server; server_name <proxy-host>; ssl_certificate <cert.pem>; ssl_certificate_key <key.pem>; location ~ ^/(api/(chat|generate|embed|embeddings|tags|show|version)|v1/) { %sproxy_pass http://127.0.0.1:11434; proxy_set_header Host localhost:11434; } location / { return 403; } }\n' "$auth" | \
         sudo tee /etc/nginx/conf.d/ollama.conf >/dev/null && sudo nginx -t && sudo nginx -s reload
       ```
 
@@ -224,7 +225,7 @@ Each item states its **pass** condition, then gives **CLI** steps (`systemctl` a
     - Expect: `401` from the first command and `200` from the second. Ollama has no server-side credential, so without a token at the proxy inference is open to anyone who can reach it.
     - Fix:
       ```bash
-      printf 'map $http_authorization $ollama_authorized { default 0; "~^Bearer <token>$" 1; }\n' | \
+      printf 'map $http_authorization $ollama_authorized { default 0; "Bearer <token>" 1; }\n' | \
         sudo tee /etc/nginx/conf.d/ollama-auth.conf >/dev/null && \
         sudo sed -i 's|proxy_pass http://127.0.0.1:11434;|if ($ollama_authorized = 0) { return 401; } proxy_pass http://127.0.0.1:11434;|' /etc/nginx/conf.d/ollama.conf && \
         sudo nginx -t && sudo nginx -s reload

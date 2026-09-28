@@ -153,8 +153,12 @@ Each item states its **pass** condition, then gives **Console** (the Azure porta
         --query "[?operationName.value=='Microsoft.CognitiveServices/accounts/regenerateKey/action'].{when:eventTimestamp, who:caller}" -o table
       ```
     - Expect: at least two rows (one per key) dated within the last 90 days, or `keyAuthDisabled` = `True` from the first item. No rows means every key ever copied out of this resource is still valid.
-    - Fix: `az cognitiveservices account keys regenerate -g <rg> -n <resource> --key-name Key2`
-    - Fix: `az cognitiveservices account keys regenerate -g <rg> -n <resource> --key-name Key1`
+    - Fix:
+      ```bash
+      az cognitiveservices account keys regenerate -g <rg> -n <resource> --key-name Key2 \
+        && read -rp "Move every client to the new Key 2, then press Enter to regenerate Key 1 " \
+        && az cognitiveservices account keys regenerate -g <rg> -n <resource> --key-name Key1
+      ```
 
 - [ ] **Block Fine-Tuning and File Upload Data Actions for Callers That Only Infer** - pass: callers on a Foundry resource hold a custom role whose `notDataActions` lists `Microsoft.CognitiveServices/accounts/OpenAI/fine-tunes/*`, `files/*`, `uploads/*`, `stored-completions/*`, `evals/*` and `models/*`
   - **Console**:
@@ -881,7 +885,7 @@ Each item states its **pass** condition, then gives **Console** (the Azure porta
 - [ ] **Delete Deployments With No Traffic (every deployment is a callable endpoint)** - pass: no deployment on the resource shows zero `AzureOpenAIRequests` over the last 30 days
   - **Console**:
     - Verify: Azure portal > Azure OpenAI > <resource> > Monitoring > Metrics > Metric `Azure OpenAI Requests` > Apply splitting > `ModelDeploymentName` > limit `50` > time range Last 30 days > every deployment listed under Foundry portal > Build > Models appears with a non-zero series
-    - Fix: Foundry portal > Build > Models > <unused deployment> > Delete > confirm
+    - Fix: Foundry portal > Build > Models > <unused deployment> > confirm with its owner that it is not a standby, batch or seasonal deployment > Delete > confirm
   - **CLI**:
     - Verify:
       ```bash
@@ -889,7 +893,7 @@ Each item states its **pass** condition, then gives **Console** (the Azure porta
         --offset 30d --interval P1D --dimension ModelDeploymentName --top 100 \
         --query "value[0].timeseries[].{deployment:metadatavalues[0].value, requests:sum(data[?total != null].total)}" -o table
       ```
-    - Expect: every deployment from `az cognitiveservices account deployment list` appears with `requests` above zero. A deployment missing from the table has served nothing for 30 days and is an endpoint nobody is watching.
+    - Expect: every deployment from `az cognitiveservices account deployment list` appears with `requests` above zero, apart from standby, batch or seasonal deployments their owners have confirmed. A deployment missing from the table has served nothing for 30 days and is an endpoint nobody is watching.
     - Fix: `az cognitiveservices account deployment delete -g <rg> -n <resource> --deployment-name <deployment>`
 
 ---

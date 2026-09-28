@@ -374,7 +374,7 @@ Each item states its **pass** condition, then gives **Console** (the GitHub, Cur
       ```
     - Fix:
       ```bash
-      c=$(gh api "repos/$CODEX_MKT/commits/HEAD" --jq .sha) && t=$(mktemp) \
+      c=<reviewed-commit-sha> && t=$(mktemp) \
         && yq -p toml -o toml ".marketplaces.allowed_sources.<name>.ref = \"$c\"" "$CODEX_REQ" > "$t" \
         && sudo install -m 0644 "$t" "$CODEX_REQ"
       ```

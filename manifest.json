@@ -2435,7 +2435,7 @@
             ],
             "fix": [
               "p=\"repos/$CODEX_MKT/contents/.agents/plugins/marketplace.json\"\ngh api \"$p\" -H \"Accept: application/vnd.github.raw+json\" \\\n  | jq '(.plugins[] | select(.name == \"<plugin>\") | .source) |= (if .source == \"npm\" then .version = \"<plugin-version>\" else .sha = \"<plugin-commit-sha>\" end)' > marketplace.json \\\n  && gh api -X PUT \"$p\" -f message=\"Pin <plugin> to a reviewed build\" -f sha=\"$(gh api \"$p\" --jq .sha)\" \\\n       -f content=\"$(base64 < marketplace.json | tr -d '\\n')\"",
-              "c=$(gh api \"repos/$CODEX_MKT/commits/HEAD\" --jq .sha) && t=$(mktemp) \\\n  && yq -p toml -o toml \".marketplaces.allowed_sources.<name>.ref = \\\"$c\\\"\" \"$CODEX_REQ\" > \"$t\" \\\n  && sudo install -m 0644 \"$t\" \"$CODEX_REQ\""
+              "c=<reviewed-commit-sha> && t=$(mktemp) \\\n  && yq -p toml -o toml \".marketplaces.allowed_sources.<name>.ref = \\\"$c\\\"\" \"$CODEX_REQ\" > \"$t\" \\\n  && sudo install -m 0644 \"$t\" \"$CODEX_REQ\""
             ],
             "expect": "`[]` at the commit your `allowed_sources` rule pins, which after the Fixes is the new commit. An unpinned source or an npm range installs whatever release is newest when a session starts."
           }
@@ -5390,8 +5390,7 @@
               "az monitor activity-log list --resource-id $RES --offset 90d --max-events 10000 \\\n  --query \"[?operationName.value=='Microsoft.CognitiveServices/accounts/regenerateKey/action'].{when:eventTimestamp, who:caller}\" -o table"
             ],
             "fix": [
-              "az cognitiveservices account keys regenerate -g <rg> -n <resource> --key-name Key2",
-              "az cognitiveservices account keys regenerate -g <rg> -n <resource> --key-name Key1"
+              "az cognitiveservices account keys regenerate -g <rg> -n <resource> --key-name Key2 \\\n  && read -rp \"Move every client to the new Key 2, then press Enter to regenerate Key 1 \" \\\n  && az cognitiveservices account keys regenerate -g <rg> -n <resource> --key-name Key1"
             ],
             "expect": "at least two rows (one per key) dated within the last 90 days, or `keyAuthDisabled` = `True` from the first item. No rows means every key ever copied out of this resource is still valid."
           }
@@ -5930,7 +5929,7 @@
           "pass": "no deployment on the resource shows zero `AzureOpenAIRequests` over the last 30 days",
           "console": {
             "verify": "Azure portal > Azure OpenAI > <resource> > Monitoring > Metrics > Metric `Azure OpenAI Requests` > Apply splitting > `ModelDeploymentName` > limit `50` > time range Last 30 days > every deployment listed under Foundry portal > Build > Models appears with a non-zero series",
-            "fix": "Foundry portal > Build > Models > <unused deployment> > Delete > confirm"
+            "fix": "Foundry portal > Build > Models > <unused deployment> > confirm with its owner that it is not a standby, batch or seasonal deployment > Delete > confirm"
           },
           "cli": {
             "verify": [
@@ -5939,7 +5938,7 @@
             "fix": [
               "az cognitiveservices account deployment delete -g <rg> -n <resource> --deployment-name <deployment>"
             ],
-            "expect": "every deployment from `az cognitiveservices account deployment list` appears with `requests` above zero. A deployment missing from the table has served nothing for 30 days and is an endpoint nobody is watching."
+            "expect": "every deployment from `az cognitiveservices account deployment list` appears with `requests` above zero, apart from standby, batch or seasonal deployments their owners have confirmed. A deployment missing from the table has served nothing for 30 days and is an endpoint nobody is watching."
           }
         },
         {
@@ -12167,14 +12166,14 @@
           "pass": "every administrator has a `proxy_admin` user with their own email, and the shared environment login is used for recovery only",
           "console": {
             "verify": "Admin UI > Internal Users > Users > Global Proxy Role column shows `Admin (All Permissions)` for each named administrator, not only for `default_user_id`",
-            "fix": "Admin UI > Internal Users > + Invite User > User Email > Global Proxy Role `Admin (All Permissions)` > tick `Send invitation email` > Invite User"
+            "fix": "Admin UI > Internal Users > + Invite User > User Email > Global Proxy Role `Admin (All Permissions)` > tick `Send invitation email` only if SSO is off > Invite User"
           },
           "cli": {
             "verify": [
               "curl -s -H \"Authorization: Bearer $MASTER_KEY\" \"$LITELLM_HOST/user/list?role=proxy_admin\" | jq -r '.users[].user_email'"
             ],
             "fix": [
-              "curl -s -X POST -H \"Authorization: Bearer $MASTER_KEY\" -H 'Content-Type: application/json' $LITELLM_HOST/user/new \\\n  -d '{\"user_email\":\"<admin-email>\",\"user_role\":\"proxy_admin\",\"auto_create_key\":false,\"send_invite_email\":true}'"
+              "curl -s -X POST -H \"Authorization: Bearer $MASTER_KEY\" -H 'Content-Type: application/json' $LITELLM_HOST/user/new \\\n  -d '{\"user_email\":\"<admin-email>\",\"user_role\":\"proxy_admin\",\"auto_create_key\":false,\"send_invite_email\":<true-only-if-SSO-is-off>}'"
             ],
             "expect": "one email per administrator, plus one `null` line for the environment login's `default_user_id`. A shared bootstrap login cannot be rotated per person or revoked for a single leaver. Once SSO is on, leave `Send invitation email` unticked and set `send_invite_email` to `false`: the emailed link sets a password and opens an admin session outside SSO for about a week, while the new administrator can sign in through the identity provider instead."
           }
@@ -14170,7 +14169,7 @@
               "for p in api/pull api/push api/create api/delete api/copy api/blobs/sha256:0 api/ps api/status api/me api/experimental/web_search api/codex/x api/signout api/user/keys/x api/allowlist-probe-$RANDOM; do\n  printf '%s %s %s\\n' \"$p\" \"$(curl -s -o /dev/null -w '%{http_code}' -X POST -d '{}' \"https://<proxy-host>/$p\")\" \\\n    \"$(curl -s -o /dev/null -w '%{http_code}' -X POST -d '{}' -H 'Host: localhost:11434' \"https://<proxy-host>/$p\")\"; done"
             ],
             "fix": [
-              "printf 'server { listen 443 ssl default_server; server_name <proxy-host>; ssl_certificate <cert.pem>; ssl_certificate_key <key.pem>; location ~ ^/(api/(chat|generate|embed|embeddings|tags|show|version)|v1/) { proxy_pass http://127.0.0.1:11434; proxy_set_header Host localhost:11434; } location / { return 403; } }\\n' | \\\n  sudo tee /etc/nginx/conf.d/ollama.conf >/dev/null && sudo nginx -t && sudo nginx -s reload"
+              "auth=''; [ -f /etc/nginx/conf.d/ollama-auth.conf ] && auth='if ($ollama_authorized = 0) { return 401; } '\nprintf 'server { listen 443 ssl default_server; server_name <proxy-host>; ssl_certificate <cert.pem>; ssl_certificate_key <key.pem>; location ~ ^/(api/(chat|generate|embed|embeddings|tags|show|version)|v1/) { %sproxy_pass http://127.0.0.1:11434; proxy_set_header Host localhost:11434; } location / { return 403; } }\\n' \"$auth\" | \\\n  sudo tee /etc/nginx/conf.d/ollama.conf >/dev/null && sudo nginx -t && sudo nginx -s reload"
             ],
             "expect": "from the first command, `default_server` on exactly one line, the one that also carries `server_name <proxy-host>` and `proxy_pass http://127.0.0.1:11434`, no other line naming `11434`, and no `listen` naming an address; nginx routes a request on its Host header, and a Host no `server_name` matches goes to the default server for the port, so without this the second probe below is answered by another server block, and any other block that reaches `11434`, such as the vendor FAQ's `listen 80` example left in `sites-enabled/`, forwards every path on its own port where the loop below does not look. From the loop, every line ends in `403 403`, answered by the proxy itself; the second probe sends `Host: localhost:11434`, which a loopback-bound Ollama accepts, so a proxy that passes the client's Host header through cannot hide behind Ollama's own `403` for a foreign host; the last path is new on every run and no Ollama route serves it, so a `404` in either column means the proxy forwards paths it does not name. Every path the proxy forwards is unauthenticated on Ollama, so an open `/api/pull` or `/api/create` is model tampering from the internet."
           }
@@ -14184,7 +14183,7 @@
               "curl -s -o /dev/null -w '%{http_code}' -H 'Authorization: Bearer <token>' https://<proxy-host>/api/version"
             ],
             "fix": [
-              "printf 'map $http_authorization $ollama_authorized { default 0; \"~^Bearer <token>$\" 1; }\\n' | \\\n  sudo tee /etc/nginx/conf.d/ollama-auth.conf >/dev/null && \\\n  sudo sed -i 's|proxy_pass http://127.0.0.1:11434;|if ($ollama_authorized = 0) { return 401; } proxy_pass http://127.0.0.1:11434;|' /etc/nginx/conf.d/ollama.conf && \\\n  sudo nginx -t && sudo nginx -s reload"
+              "printf 'map $http_authorization $ollama_authorized { default 0; \"Bearer <token>\" 1; }\\n' | \\\n  sudo tee /etc/nginx/conf.d/ollama-auth.conf >/dev/null && \\\n  sudo sed -i 's|proxy_pass http://127.0.0.1:11434;|if ($ollama_authorized = 0) { return 401; } proxy_pass http://127.0.0.1:11434;|' /etc/nginx/conf.d/ollama.conf && \\\n  sudo nginx -t && sudo nginx -s reload"
             ],
             "expect": "`401` from the first command and `200` from the second. Ollama has no server-side credential, so without a token at the proxy inference is open to anyone who can reach it."
           }
